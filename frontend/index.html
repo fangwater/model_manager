@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Model Manager</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="scene-layer"></div>
+    <header class="topbar card">
+      <div>
+        <h1>Model Manager</h1>
+        <p class="subtitle">Readonly console for model artifacts, factors, IC, and gRPC payload mapping.</p>
+      </div>
+      <div class="status-wrap">
+        <span id="permissionBadge" class="badge">guest</span>
+        <span id="grpcBadge" class="badge badge-alt">gRPC</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="authSection" class="card auth-card">
+        <h2>Access Control</h2>
+        <p id="authHint" class="text-muted">Checking password status...</p>
+
+        <div id="bootstrapBox" class="panel hidden">
+          <h3>Initialize Password</h3>
+          <form id="bootstrapForm" class="form-grid">
+            <label>
+              Password
+              <input id="bootstrapPassword" type="password" autocomplete="new-password" required />
+            </label>
+            <button type="submit">Initialize</button>
+          </form>
+        </div>
+
+        <div id="loginBox" class="panel hidden">
+          <h3>Login</h3>
+          <form id="loginForm" class="form-grid">
+            <label>
+              Password
+              <input id="loginPassword" type="password" autocomplete="current-password" required />
+            </label>
+            <button type="submit">Login</button>
+          </form>
+        </div>
+
+        <p id="authMessage" class="inline-note"></p>
+      </section>
+
+      <section id="dashboard" class="hidden">
+        <div class="stats-grid">
+          <article class="card stat-card">
+            <p class="stat-label">Models</p>
+            <p id="modelCount" class="stat-value">0</p>
+          </article>
+          <article class="card stat-card">
+            <p class="stat-label">Available Symbols</p>
+            <p id="symbolCount" class="stat-value">0</p>
+          </article>
+          <article class="card stat-card">
+            <p class="stat-label">Permission</p>
+            <p id="permissionText" class="stat-value">readonly</p>
+          </article>
+        </div>
+
+        <div class="layout-grid">
+          <section class="card">
+            <h2>Register Model Path</h2>
+            <form id="addModelForm" class="form-grid">
+              <label>
+                Model Name
+                <input id="modelName" type="text" placeholder="pairmm_xgb_v1" required />
+              </label>
+              <label>
+                Model Directory Path
+                <input id="modelPath" type="text" placeholder="/abs/path/to/model_dir" required />
+              </label>
+              <button type="submit">Scan and Register</button>
+            </form>
+            <p id="addModelMessage" class="inline-note"></p>
+          </section>
+
+          <section class="card">
+            <div class="row-head">
+              <h2>Model List</h2>
+              <button id="refreshModelsBtn" class="btn-ghost" type="button">Refresh</button>
+            </div>
+            <div id="modelsContainer" class="model-cards"></div>
+          </section>
+        </div>
+
+        <section class="card explorer-card">
+          <div class="row-head">
+            <h2>Symbol Explorer</h2>
+            <p class="text-muted">Select model and symbol to inspect factors, IC, and metadata.</p>
+          </div>
+
+          <div class="selectors">
+            <label>
+              Model
+              <select id="selectModel"></select>
+            </label>
+            <label>
+              Symbol
+              <select id="selectSymbol"></select>
+            </label>
+            <label>
+              Group Key
+              <select id="selectGroup"></select>
+            </label>
+            <button id="loadDetailBtn" type="button">Load Detail</button>
+          </div>
+
+          <div id="detailMeta" class="detail-grid"></div>
+
+          <div class="detail-panels">
+            <article class="panel card">
+              <h3>Dim ↔ Factor Mapping</h3>
+              <div class="table-wrap">
+                <table id="factorTable">
+                  <thead>
+                    <tr>
+                      <th>Dim</th>
+                      <th>Factor</th>
+                      <th>Kendall Tau</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel card">
+              <h3>IC Table</h3>
+              <div class="table-wrap">
+                <table id="icTable">
+                  <thead>
+                    <tr>
+                      <th>Factor</th>
+                      <th>Kendall Tau</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

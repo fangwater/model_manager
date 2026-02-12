@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+logs/
+data/
+backend/generated/model_manager_pb2.py
+backend/generated/model_manager_pb2_grpc.py

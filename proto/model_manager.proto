@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package modelmanager.v1;
+
+message GetModelRequest {
+  string model_name = 1;
+  string symbol = 2;
+  string group_key = 3;
+}
+
+message ListSymbolsRequest {
+  string model_name = 1;
+}
+
+message SymbolEntry {
+  string symbol = 1;
+  string group_key = 2;
+  string return_name = 3;
+  uint32 feature_dim = 4;
+  bool grpc_ready = 5;
+}
+
+message ListSymbolsResponse {
+  bool ok = 1;
+  string message = 2;
+  repeated SymbolEntry symbols = 3;
+}
+
+message DimFactor {
+  uint32 dim = 1;
+  string factor_name = 2;
+  double kendall_tau = 3;
+}
+
+message ModelMetadata {
+  string model_name = 1;
+  string symbol = 2;
+  string group_key = 3;
+  string return_name = 4;
+  uint32 feature_dim = 5;
+  int64 train_window_start_ts = 6;
+  int64 train_window_end_ts = 7;
+  string train_start_date = 8;
+  string train_end_date = 9;
+  uint64 train_samples = 10;
+  double train_time_sec = 11;
+  string model_json_path = 12;
+  string source_root_path = 13;
+  string scanned_at = 14;
+}
+
+message ModelPayload {
+  string model_json = 1;
+  ModelMetadata metadata = 2;
+  repeated DimFactor dim_factors = 3;
+}
+
+message GetModelResponse {
+  bool ok = 1;
+  string message = 2;
+  ModelPayload payload = 3;
+}
+
+service ModelService {
+  rpc GetModel(GetModelRequest) returns (GetModelResponse);
+  rpc ListSymbols(ListSymbolsRequest) returns (ListSymbolsResponse);
+}
