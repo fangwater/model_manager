@@ -27,14 +27,30 @@ Service groups these by `group_key` (`SOLUSDT_mid_chg_1m`) and extracts:
 - training metadata
 - dim-to-factor mapping for gRPC
 
-## Install
+## Minimal operation flow
+
+### 1) Setup (first time / dependency update)
 
 ```bash
 cd /home/fanghaizhou/project/model_manager
-./setup_venv.sh
+./setup.sh
 ```
 
-## Run (direct)
+### 2) Start
+
+```bash
+cd /home/fanghaizhou/project/model_manager
+./start.sh
+```
+
+### 3) Stop
+
+```bash
+cd /home/fanghaizhou/project/model_manager
+./stop.sh
+```
+
+## Run (direct, optional)
 
 `start_model_manager.sh` is pinned to `.venv/bin/python`.
 
@@ -51,46 +67,6 @@ Default ports:
 Open UI:
 
 - `http://127.0.0.1:8788`
-
-## PM2 management
-
-Start or restart:
-
-```bash
-cd /home/fanghaizhou/project/model_manager
-./pm2_start.sh
-```
-
-Restart:
-
-```bash
-./pm2_restart.sh
-```
-
-Stop and delete process:
-
-```bash
-./pm2_stop.sh
-```
-
-Tail logs:
-
-```bash
-./pm2_logs.sh 200
-```
-
-## PM2 auto-start on boot
-
-```bash
-cd /home/fanghaizhou/project/model_manager
-./pm2_enable_startup.sh
-```
-
-Then run the `sudo ...` command printed by `pm2 startup`, and finally:
-
-```bash
-pm2 save
-```
 
 ## Password management (sqlite)
 
@@ -159,4 +135,4 @@ All model endpoints require Bearer token from login.
 - `MODEL_MANAGER_WATCH_INTERVAL` (seconds, default `5`)
 - `MODEL_MANAGER_WATCH_DEBOUNCE` (seconds, default `2`)
 
-You can edit these in `ecosystem.config.js` for PM2-managed runs.
+You can edit these in `ecosystem.config.js`.
