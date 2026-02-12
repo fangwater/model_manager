@@ -17,9 +17,9 @@ module.exports = {
       merge_logs: true,
       env: {
         MODEL_MANAGER_HTTP_HOST: process.env.MODEL_MANAGER_HTTP_HOST || '0.0.0.0',
-        MODEL_MANAGER_HTTP_PORT: process.env.MODEL_MANAGER_HTTP_PORT || '18088',
-        MODEL_MANAGER_GRPC_HOST: '0.0.0.0',
-        MODEL_MANAGER_GRPC_PORT: '50061',
+        MODEL_MANAGER_HTTP_PORT: process.env.MODEL_MANAGER_HTTP_PORT || '6300',
+        MODEL_MANAGER_GRPC_HOST: process.env.MODEL_MANAGER_GRPC_HOST || '0.0.0.0',
+        MODEL_MANAGER_GRPC_PORT: process.env.MODEL_MANAGER_GRPC_PORT || '13001',
         MODEL_MANAGER_TOKEN_TTL: '43200',
         MODEL_MANAGER_WATCH_ENABLED: '1',
         MODEL_MANAGER_WATCH_INTERVAL: '5',
