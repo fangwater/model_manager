@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -35,6 +36,7 @@ class ApiSession(BaseModel):
 
 def create_app(settings: Settings, registry: ModelRegistry, auth_manager: AuthManager) -> FastAPI:
     app = FastAPI(title="Model Manager", version="0.1.0")
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     app.state.settings = settings
     app.state.registry = registry
@@ -147,6 +149,8 @@ def create_app(settings: Settings, registry: ModelRegistry, auth_manager: AuthMa
             snapshot = registry.refresh_model(model_name)
         except ModelNotFound as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ModelRegistryError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
@@ -192,5 +196,42 @@ def create_app(settings: Settings, registry: ModelRegistry, auth_manager: AuthMa
         except SymbolNotFound as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         return detail
+
+    @app.get("/api/models/{model_name}/model/{symbol}")
+    async def get_model_payload(
+        model_name: str,
+        symbol: str,
+        session: ApiSession = Depends(_require_session),
+    ) -> dict[str, object]:
+        _ = session
+        try:
+            payload = registry.build_model_payload(model_name=model_name, symbol=symbol)
+        except ModelNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except SymbolNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return {
+            "ok": True,
+            "message": "ok",
+            "payload": {
+                "model_json": payload["model_json"],
+                "metadata": {
+                    "model_name": payload["model_name"],
+                    "symbol": payload["symbol"],
+                    "return_name": payload["return_name"],
+                    "feature_dim": payload["feature_dim"],
+                    "train_window_start_ts": payload["train_window_start_ts"],
+                    "train_window_end_ts": payload["train_window_end_ts"],
+                    "train_start_date": payload["train_start_date"],
+                    "train_end_date": payload["train_end_date"],
+                    "train_samples": payload["train_samples"],
+                    "train_time_sec": payload["train_time_sec"],
+                    "model_json_path": payload["model_json_path"],
+                    "source_root_path": payload["root_path"],
+                    "scanned_at": payload["scanned_at"],
+                },
+                "dim_factors": payload["dim_factors"],
+            },
+        }
 
     return app

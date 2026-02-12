@@ -4,7 +4,7 @@ Python service for:
 
 - registering model artifact directories (read-only parsing)
 - exploring symbol/factor/IC/info via web UI
-- serving converted XGBoost `*_model.json` + metadata through gRPC
+- serving XGBoost model json + metadata through HTTP
 - auto-refreshing registered models when artifact files change
 
 ## Artifact layout
@@ -15,7 +15,7 @@ Each model directory can contain files like:
 - `SOLUSDT_mid_chg_1m_ic.csv`
 - `SOLUSDT_mid_chg_1m_info.pkl`
 - `SOLUSDT_mid_chg_1m_model.pkl`
-- `SOLUSDT_mid_chg_1m_model.json`
+- `SOLUSDT_mid_chg_1m_model.json` (optional; auto-converted from pkl if absent)
 
 Service groups these by `group_key` (`SOLUSDT_mid_chg_1m`) and extracts:
 
@@ -25,7 +25,7 @@ Service groups these by `group_key` (`SOLUSDT_mid_chg_1m`) and extracts:
 - factor list
 - IC table
 - training metadata
-- dim-to-factor mapping for gRPC
+- dim-to-factor mapping for model payload API
 
 ## Minimal operation flow
 
@@ -45,7 +45,7 @@ cd /home/fanghaizhou/project/model_manager
 ./start.sh
 ```
 
-Change web endpoint (gRPC port remains independent from web):
+Change web endpoint:
 
 ```bash
 ./start.sh --web-host 0.0.0.0 --web-port 18090
@@ -76,7 +76,6 @@ cd /home/fanghaizhou/project/model_manager
 Default ports:
 
 - HTTP: `0.0.0.0:6300`
-- gRPC: `0.0.0.0:13001`
 
 Open UI:
 
@@ -99,31 +98,27 @@ No user concept, only one password.
 ./start_model_manager.sh --set-password 'new-passwd'
 ```
 
-## gRPC
+## Model Payload API
 
-Proto file:
+Method:
 
-- `proto/model_manager.proto`
-
-Primary method:
-
-- `GetModel(GetModelRequest)`
-
-Request fields:
-
-- `model_name`
-- `symbol`
-- `group_key` (optional disambiguation)
+- `GET /api/models/{model_name}/model/{symbol}`
 
 Response includes:
 
-- `model_json` (converted XGBoost json text)
-- model metadata (time window, dim, train samples, etc.)
-- per-dim mapping (`DimFactor`) with `factor_name` and `kendall_tau`
+- `payload.model_json` (XGBoost json text, auto-converted from `*_model.pkl` when needed)
+- `payload.metadata` (time window, dim, train samples, etc.)
+- `payload.dim_factors` with `factor_name` and `kendall_tau`
 
-Secondary method:
+Selection behavior:
 
-- `ListSymbols(ListSymbolsRequest)`
+- `symbol` must map to exactly one group in the registered path
+- if multiple groups share the same `symbol`, request returns `404`
+
+Compression:
+
+- server enables gzip for large responses (including model payload) when client sends `Accept-Encoding: gzip`
+- with curl, use `--compressed` to enable it automatically
 
 ## HTTP API summary
 
@@ -135,6 +130,10 @@ Secondary method:
 - `POST /api/models/{model_name}/refresh`
 - `GET /api/models/{model_name}/symbols`
 - `GET /api/models/{model_name}/symbols/{symbol}?group_key=...`
+- `GET /api/models/{model_name}/model/{symbol}`
+
+`POST /api/models` and refresh require unique `symbol` per registered root path.
+If one symbol maps to multiple groups, request fails with `400`.
 
 All model endpoints require Bearer token from login.
 
@@ -142,8 +141,6 @@ All model endpoints require Bearer token from login.
 
 - `MODEL_MANAGER_HTTP_HOST`
 - `MODEL_MANAGER_HTTP_PORT`
-- `MODEL_MANAGER_GRPC_HOST`
-- `MODEL_MANAGER_GRPC_PORT`
 - `MODEL_MANAGER_TOKEN_TTL`
 - `MODEL_MANAGER_WATCH_ENABLED` (default `1`)
 - `MODEL_MANAGER_WATCH_INTERVAL` (seconds, default `5`)

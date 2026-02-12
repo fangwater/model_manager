@@ -251,7 +251,7 @@ function renderMeta(detail) {
     ["Train Start", detail.train_start_date || "-"],
     ["Train End", detail.train_end_date || "-"],
     ["Train Samples", detail.train_samples || "-"],
-    ["gRPC Ready", detail.grpc_ready ? "yes" : "no"],
+    ["Payload Ready", detail.grpc_ready ? "yes" : "no"],
   ];
 
   el.detailMeta.innerHTML = items

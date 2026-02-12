@@ -7,7 +7,6 @@ mkdir -p logs
 
 WEB_HOST="${MODEL_MANAGER_HTTP_HOST:-}"
 WEB_PORT="${MODEL_MANAGER_HTTP_PORT:-}"
-GRPC_PORT="${MODEL_MANAGER_GRPC_PORT:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,11 +28,9 @@ done
 
 WEB_HOST="${WEB_HOST:-0.0.0.0}"
 WEB_PORT="${WEB_PORT:-6300}"
-GRPC_PORT="${GRPC_PORT:-13001}"
 
 export MODEL_MANAGER_HTTP_HOST="${WEB_HOST}"
 export MODEL_MANAGER_HTTP_PORT="${WEB_PORT}"
-export MODEL_MANAGER_GRPC_PORT="${GRPC_PORT}"
 
 if ! command -v pm2 >/dev/null 2>&1; then
   echo "[ERROR] pm2 is not installed. Please install pm2 first." >&2
@@ -51,4 +48,3 @@ pm2 save
 pm2 status model_manager
 
 echo "[OK] Web server endpoint: http://${MODEL_MANAGER_HTTP_HOST}:${MODEL_MANAGER_HTTP_PORT}"
-echo "[OK] gRPC endpoint      : 0.0.0.0:${MODEL_MANAGER_GRPC_PORT}"

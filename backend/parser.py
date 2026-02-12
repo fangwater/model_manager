@@ -397,11 +397,12 @@ def scan_model_root(model_name: str, root_path: str) -> ModelSnapshot:
             if file_meta is not None:
                 artifacts[key] = file_meta
 
+        has_model_json = file_map.get("model_json") is not None and file_map["model_json"].exists()
+        has_model_pkl = file_map.get("model_pkl") is not None and file_map["model_pkl"].exists()
         grpc_ready = (
-            file_map.get("model_json") is not None
+            (has_model_json or has_model_pkl)
             and feature_dim > 0
             and bool(symbol)
-            and file_map["model_json"].exists()
         )
 
         record = SymbolRecord(

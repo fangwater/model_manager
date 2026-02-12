@@ -9,8 +9,6 @@ import uvicorn
 from .auth import AuthManager
 from .config import load_settings
 from .db import Database
-from .grpc_service import start_grpc_server
-from .proto_loader import ProtoGenerationError, ensure_proto_modules
 from .registry import ModelRegistry
 from .watcher import ModelWatcher
 from .web import create_app
@@ -23,9 +21,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Model Manager server")
     parser.add_argument("--http-host", default="", help="HTTP listen host")
     parser.add_argument("--http-port", type=int, default=0, help="HTTP listen port")
-    parser.add_argument("--grpc-host", default="", help="gRPC listen host")
-    parser.add_argument("--grpc-port", type=int, default=0, help="gRPC listen port")
-    parser.add_argument("--disable-grpc", action="store_true", help="Disable gRPC service")
     parser.add_argument(
         "--init-password",
         default="",
@@ -37,19 +32,6 @@ def parse_args() -> argparse.Namespace:
         help="Force reset password and exit",
     )
     return parser.parse_args()
-
-
-async def _stop_grpc_server(grpc_server) -> None:
-    if grpc_server is None:
-        return
-    try:
-        await grpc_server.stop(grace=1)
-        LOG.info("gRPC stopped")
-    except asyncio.CancelledError:
-        # shutdown path should be quiet on Ctrl+C
-        LOG.info("gRPC stop cancelled during shutdown")
-    except Exception as exc:
-        LOG.warning("gRPC stop failed: %s", exc)
 
 
 async def _stop_watcher(watcher: ModelWatcher | None) -> None:
@@ -73,8 +55,6 @@ async def async_main(args: argparse.Namespace) -> int:
     settings = load_settings()
     http_host = args.http_host or settings.http_host
     http_port = args.http_port or settings.http_port
-    grpc_host = args.grpc_host or settings.grpc_host
-    grpc_port = args.grpc_port or settings.grpc_port
 
     db = Database(settings.db_path)
     db.initialize()
@@ -94,7 +74,7 @@ async def async_main(args: argparse.Namespace) -> int:
         LOG.info("password updated")
         return 0
 
-    registry = ModelRegistry(db)
+    registry = ModelRegistry(db, converted_model_dir=settings.converted_model_dir)
     registry.warmup()
 
     watcher = None
@@ -108,26 +88,6 @@ async def async_main(args: argparse.Namespace) -> int:
 
     app = create_app(settings=settings, registry=registry, auth_manager=auth_manager)
 
-    grpc_server = None
-    if not args.disable_grpc:
-        try:
-            pb2, pb2_grpc = ensure_proto_modules(
-                proto_dir=settings.proto_dir,
-                generated_dir=settings.generated_proto_dir,
-            )
-            grpc_server = await start_grpc_server(
-                registry=registry,
-                pb2=pb2,
-                pb2_grpc=pb2_grpc,
-                host=grpc_host,
-                port=grpc_port,
-            )
-            LOG.info("gRPC started at %s:%s", grpc_host, grpc_port)
-        except ProtoGenerationError as exc:
-            LOG.error("gRPC startup failed: %s", exc)
-            await _stop_watcher(watcher)
-            return 3
-
     config = uvicorn.Config(app=app, host=http_host, port=http_port, log_level="info")
     server = uvicorn.Server(config)
 
@@ -139,8 +99,6 @@ async def async_main(args: argparse.Namespace) -> int:
         cancelled = True
         LOG.info("Shutdown requested")
     finally:
-        # Stop gRPC first so there is no pending AioServer.__del__ shutdown.
-        await _stop_grpc_server(grpc_server)
         await _stop_watcher(watcher)
 
     if cancelled:
