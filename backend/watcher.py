@@ -84,9 +84,15 @@ class ModelWatcher:
 
     async def stop(self) -> None:
         self._stop.set()
-        if self._task is not None:
-            await self._task
-            self._task = None
+        task = self._task
+        if task is not None:
+            try:
+                await task
+            except asyncio.CancelledError:
+                # watcher task might already be cancelled by outer loop shutdown
+                pass
+            finally:
+                self._task = None
         LOG.info("watcher stopped")
 
     async def _run_loop(self) -> None:

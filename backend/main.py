@@ -19,7 +19,6 @@ from .web import create_app
 LOG = logging.getLogger("model_manager")
 
 
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Model Manager server")
     parser.add_argument("--http-host", default="", help="HTTP listen host")
@@ -38,6 +37,31 @@ def parse_args() -> argparse.Namespace:
         help="Force reset password and exit",
     )
     return parser.parse_args()
+
+
+async def _stop_grpc_server(grpc_server) -> None:
+    if grpc_server is None:
+        return
+    try:
+        await grpc_server.stop(grace=1)
+        LOG.info("gRPC stopped")
+    except asyncio.CancelledError:
+        # shutdown path should be quiet on Ctrl+C
+        LOG.info("gRPC stop cancelled during shutdown")
+    except Exception as exc:
+        LOG.warning("gRPC stop failed: %s", exc)
+
+
+async def _stop_watcher(watcher: ModelWatcher | None) -> None:
+    if watcher is None:
+        return
+    try:
+        await watcher.stop()
+    except asyncio.CancelledError:
+        # shutdown path should be quiet on Ctrl+C
+        LOG.info("watcher stop cancelled during shutdown")
+    except Exception as exc:
+        LOG.warning("watcher stop failed: %s", exc)
 
 
 async def async_main(args: argparse.Namespace) -> int:
@@ -72,6 +96,7 @@ async def async_main(args: argparse.Namespace) -> int:
 
     registry = ModelRegistry(db)
     registry.warmup()
+
     watcher = None
     if settings.watch_enabled:
         watcher = ModelWatcher(
@@ -100,28 +125,36 @@ async def async_main(args: argparse.Namespace) -> int:
             LOG.info("gRPC started at %s:%s", grpc_host, grpc_port)
         except ProtoGenerationError as exc:
             LOG.error("gRPC startup failed: %s", exc)
+            await _stop_watcher(watcher)
             return 3
 
     config = uvicorn.Config(app=app, host=http_host, port=http_port, log_level="info")
     server = uvicorn.Server(config)
 
     LOG.info("HTTP started at %s:%s", http_host, http_port)
+    cancelled = False
     try:
         await server.serve()
+    except asyncio.CancelledError:
+        cancelled = True
+        LOG.info("Shutdown requested")
     finally:
-        if watcher is not None:
-            await watcher.stop()
-        if grpc_server is not None:
-            await grpc_server.stop(grace=1)
-            LOG.info("gRPC stopped")
+        # Stop gRPC first so there is no pending AioServer.__del__ shutdown.
+        await _stop_grpc_server(grpc_server)
+        await _stop_watcher(watcher)
 
+    if cancelled:
+        return 130
     return 0
-
 
 
 def main() -> None:
     args = parse_args()
-    code = asyncio.run(async_main(args))
+    try:
+        code = asyncio.run(async_main(args))
+    except KeyboardInterrupt:
+        # Avoid noisy traceback on manual Ctrl+C.
+        raise SystemExit(130)
     raise SystemExit(code)
 
 
