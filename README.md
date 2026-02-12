@@ -38,9 +38,23 @@ cd /home/fanghaizhou/project/model_manager
 
 ### 2) Start
 
+Default web endpoint is no longer `8788`; it is now `18088`.
+
 ```bash
 cd /home/fanghaizhou/project/model_manager
 ./start.sh
+```
+
+Change web endpoint (gRPC remains unchanged):
+
+```bash
+./start.sh --web-host 0.0.0.0 --web-port 18090
+```
+
+or with env vars:
+
+```bash
+MODEL_MANAGER_HTTP_HOST=0.0.0.0 MODEL_MANAGER_HTTP_PORT=18090 ./start.sh
 ```
 
 ### 3) Stop
@@ -61,12 +75,12 @@ cd /home/fanghaizhou/project/model_manager
 
 Default ports:
 
-- HTTP: `0.0.0.0:8788`
+- HTTP: `0.0.0.0:18088`
 - gRPC: `0.0.0.0:50061`
 
 Open UI:
 
-- `http://127.0.0.1:8788`
+- `http://127.0.0.1:18088`
 
 ## Password management (sqlite)
 

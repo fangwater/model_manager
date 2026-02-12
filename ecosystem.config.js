@@ -16,8 +16,8 @@ module.exports = {
       error_file: './logs/model_manager.err.log',
       merge_logs: true,
       env: {
-        MODEL_MANAGER_HTTP_HOST: '0.0.0.0',
-        MODEL_MANAGER_HTTP_PORT: '8788',
+        MODEL_MANAGER_HTTP_HOST: process.env.MODEL_MANAGER_HTTP_HOST || '0.0.0.0',
+        MODEL_MANAGER_HTTP_PORT: process.env.MODEL_MANAGER_HTTP_PORT || '18088',
         MODEL_MANAGER_GRPC_HOST: '0.0.0.0',
         MODEL_MANAGER_GRPC_PORT: '50061',
         MODEL_MANAGER_TOKEN_TTL: '43200',
