@@ -26,6 +26,9 @@ const el = {
   selectSymbol: document.getElementById("selectSymbol"),
   selectGroup: document.getElementById("selectGroup"),
   loadDetailBtn: document.getElementById("loadDetailBtn"),
+  loadModelFactorsBtn: document.getElementById("loadModelFactorsBtn"),
+  modelFactorsMeta: document.getElementById("modelFactorsMeta"),
+  modelFactorsTableBody: document.querySelector("#modelFactorsTable tbody"),
   detailMeta: document.getElementById("detailMeta"),
   factorTableBody: document.querySelector("#factorTable tbody"),
   icTableBody: document.querySelector("#icTable tbody"),
@@ -101,6 +104,7 @@ function showDashboard(visible) {
     el.dashboard.classList.add("hidden");
     el.modelsContainer.innerHTML = "";
     el.detailMeta.innerHTML = "";
+    clearModelFactorsView();
     el.factorTableBody.innerHTML = "";
     el.icTableBody.innerHTML = "";
     stopAutoRefresh();
@@ -214,6 +218,7 @@ async function loadSymbolsForSelectedModel() {
   if (!modelName) {
     el.selectSymbol.innerHTML = "";
     el.selectGroup.innerHTML = "";
+    clearModelFactorsView();
     return;
   }
 
@@ -223,6 +228,46 @@ async function loadSymbolsForSelectedModel() {
   const symbols = [...new Set((payload.items || []).map((x) => x.symbol).filter(Boolean))].sort();
   el.selectSymbol.innerHTML = symbols.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
   await updateGroupSelector();
+}
+
+function clearModelFactorsView() {
+  el.modelFactorsMeta.textContent = "Select a model and click \"Load Union Factors\" to request all factors across symbols.";
+  el.modelFactorsTableBody.innerHTML = "";
+}
+
+function renderModelFactors(payload) {
+  const factors = Array.isArray(payload.factors) ? payload.factors : [];
+  el.modelFactorsMeta.textContent = `model=${payload.model_name || "-"}, factors=${payload.factor_count || 0}, symbols=${payload.symbol_count || 0}, groups=${payload.group_count || 0}`;
+
+  if (!factors.length) {
+    el.modelFactorsTableBody.innerHTML = `
+      <tr>
+        <td colspan="2">No factors found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  el.modelFactorsTableBody.innerHTML = factors
+    .map(
+      (factor, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(factor)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+async function loadModelFactors() {
+  const modelName = el.selectModel.value;
+  if (!modelName) {
+    clearModelFactorsView();
+    return;
+  }
+
+  const payload = await api(`/api/models/${encodeURIComponent(modelName)}/factors`);
+  renderModelFactors(payload);
 }
 
 async function updateGroupSelector() {
@@ -399,6 +444,7 @@ el.refreshModelsBtn.addEventListener("click", async () => {
 el.selectModel.addEventListener("change", async () => {
   try {
     await loadSymbolsForSelectedModel();
+    clearModelFactorsView();
   } catch (err) {
     showAddModelMessage(String(err.message || err), true);
   }
@@ -411,6 +457,14 @@ el.selectSymbol.addEventListener("change", async () => {
 el.loadDetailBtn.addEventListener("click", async () => {
   try {
     await loadDetail();
+  } catch (err) {
+    showAddModelMessage(String(err.message || err), true);
+  }
+});
+
+el.loadModelFactorsBtn.addEventListener("click", async () => {
+  try {
+    await loadModelFactors();
   } catch (err) {
     showAddModelMessage(String(err.message || err), true);
   }

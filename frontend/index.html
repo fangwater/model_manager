@@ -113,6 +113,27 @@
             <button id="loadDetailBtn" type="button">Load Detail</button>
           </div>
 
+          <article class="panel card">
+            <div class="row-head">
+              <h3>Model Factor Union</h3>
+              <button id="loadModelFactorsBtn" class="btn-ghost" type="button">Load Union Factors</button>
+            </div>
+            <p id="modelFactorsMeta" class="text-muted">
+              Select a model and click "Load Union Factors" to request all factors across symbols.
+            </p>
+            <div class="table-wrap">
+              <table id="modelFactorsTable">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Factor</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+
           <div id="detailMeta" class="detail-grid"></div>
 
           <div class="detail-panels">

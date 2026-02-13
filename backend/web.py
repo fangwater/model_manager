@@ -180,6 +180,18 @@ def create_app(settings: Settings, registry: ModelRegistry, auth_manager: AuthMa
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         return {"items": symbols}
 
+    @app.get("/api/models/{model_name}/factors")
+    async def list_model_factors(
+        model_name: str,
+        session: ApiSession = Depends(_require_session),
+    ) -> dict[str, object]:
+        _ = session
+        try:
+            factors = registry.list_model_factors(model_name)
+        except ModelNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return factors
+
     @app.get("/api/models/{model_name}/symbols/{symbol}")
     async def get_symbol_detail(
         model_name: str,

@@ -129,6 +129,7 @@ Compression:
 - `POST /api/models`
 - `POST /api/models/{model_name}/refresh`
 - `GET /api/models/{model_name}/symbols`
+- `GET /api/models/{model_name}/factors`
 - `GET /api/models/{model_name}/symbols/{symbol}?group_key=...`
 - `GET /api/models/{model_name}/model/{symbol}`
 
@@ -136,6 +137,14 @@ Compression:
 If one symbol maps to multiple groups, request fails with `400`.
 
 All model endpoints require Bearer token from login.
+
+`GET /api/models/{model_name}/factors` returns the union factor list across all symbols/groups:
+
+- `model_name`
+- `symbol_count`
+- `group_count`
+- `factor_count`
+- `factors` (deduplicated list)
 
 ## Env vars
 

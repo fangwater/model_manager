@@ -152,6 +152,28 @@ class ModelRegistry:
             )
         return out
 
+    def list_model_factors(self, model_name: str) -> dict[str, Any]:
+        snapshot = self.get_model_snapshot(model_name)
+
+        factors: list[str] = []
+        seen: set[str] = set()
+        for record in snapshot.symbols:
+            for raw_factor in record.factors:
+                factor = str(raw_factor).strip()
+                if not factor or factor in seen:
+                    continue
+                seen.add(factor)
+                factors.append(factor)
+
+        return {
+            "model_name": snapshot.model_name,
+            "scanned_at": snapshot.scanned_at,
+            "symbol_count": snapshot.symbol_count,
+            "group_count": snapshot.group_count,
+            "factor_count": len(factors),
+            "factors": factors,
+        }
+
     def get_symbol_detail(
         self,
         model_name: str,
