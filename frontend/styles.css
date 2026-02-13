@@ -327,6 +327,13 @@ button:active {
   gap: 12px;
 }
 
+.overview-panels {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .table-wrap {
   margin-top: 8px;
   max-height: 320px;
@@ -369,7 +376,8 @@ tbody tr:nth-child(even) {
 
 @media (max-width: 980px) {
   .layout-grid,
-  .detail-panels {
+  .detail-panels,
+  .overview-panels {
     grid-template-columns: 1fr;
   }
 

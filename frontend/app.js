@@ -27,8 +27,12 @@ const el = {
   selectGroup: document.getElementById("selectGroup"),
   loadDetailBtn: document.getElementById("loadDetailBtn"),
   loadModelFactorsBtn: document.getElementById("loadModelFactorsBtn"),
+  loadModelOverviewBtn: document.getElementById("loadModelOverviewBtn"),
   modelFactorsMeta: document.getElementById("modelFactorsMeta"),
   modelFactorsTableBody: document.querySelector("#modelFactorsTable tbody"),
+  modelOverviewMeta: document.getElementById("modelOverviewMeta"),
+  modelSymbolsTableBody: document.querySelector("#modelSymbolsTable tbody"),
+  modelAllFactorsTableBody: document.querySelector("#modelAllFactorsTable tbody"),
   detailMeta: document.getElementById("detailMeta"),
   factorTableBody: document.querySelector("#factorTable tbody"),
   icTableBody: document.querySelector("#icTable tbody"),
@@ -105,6 +109,7 @@ function showDashboard(visible) {
     el.modelsContainer.innerHTML = "";
     el.detailMeta.innerHTML = "";
     clearModelFactorsView();
+    clearModelOverviewView();
     el.factorTableBody.innerHTML = "";
     el.icTableBody.innerHTML = "";
     stopAutoRefresh();
@@ -219,6 +224,7 @@ async function loadSymbolsForSelectedModel() {
     el.selectSymbol.innerHTML = "";
     el.selectGroup.innerHTML = "";
     clearModelFactorsView();
+    clearModelOverviewView();
     return;
   }
 
@@ -233,6 +239,12 @@ async function loadSymbolsForSelectedModel() {
 function clearModelFactorsView() {
   el.modelFactorsMeta.textContent = "Select a model and click \"Load Union Factors\" to request all factors across symbols.";
   el.modelFactorsTableBody.innerHTML = "";
+}
+
+function clearModelOverviewView() {
+  el.modelOverviewMeta.textContent = "Select a model and click \"Load Symbols + Factors\" to view all symbols and all factors.";
+  el.modelSymbolsTableBody.innerHTML = "";
+  el.modelAllFactorsTableBody.innerHTML = "";
 }
 
 function renderModelFactors(payload) {
@@ -268,6 +280,73 @@ async function loadModelFactors() {
 
   const payload = await api(`/api/models/${encodeURIComponent(modelName)}/factors`);
   renderModelFactors(payload);
+}
+
+function renderModelOverview(modelName, symbolsPayload, factorsPayload) {
+  const rows = Array.isArray(symbolsPayload.items) ? symbolsPayload.items : [];
+  const counts = new Map();
+  for (const row of rows) {
+    const symbol = String(row.symbol || "").trim();
+    if (!symbol) {
+      continue;
+    }
+    counts.set(symbol, (counts.get(symbol) || 0) + 1);
+  }
+  const symbols = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  const factors = Array.isArray(factorsPayload.factors) ? factorsPayload.factors : [];
+  el.modelOverviewMeta.textContent = `model=${modelName}, unique_symbols=${symbols.length}, groups=${rows.length}, factors=${factors.length}`;
+
+  if (!symbols.length) {
+    el.modelSymbolsTableBody.innerHTML = `
+      <tr>
+        <td colspan="2">No symbols found.</td>
+      </tr>
+    `;
+  } else {
+    el.modelSymbolsTableBody.innerHTML = symbols
+      .map(
+        ([symbol, groupCount]) => `
+      <tr>
+        <td>${escapeHtml(symbol)}</td>
+        <td>${groupCount}</td>
+      </tr>`
+      )
+      .join("");
+  }
+
+  if (!factors.length) {
+    el.modelAllFactorsTableBody.innerHTML = `
+      <tr>
+        <td colspan="2">No factors found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  el.modelAllFactorsTableBody.innerHTML = factors
+    .map(
+      (factor, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(factor)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+async function loadModelOverview() {
+  const modelName = el.selectModel.value;
+  if (!modelName) {
+    clearModelOverviewView();
+    return;
+  }
+
+  const [symbolsPayload, factorsPayload] = await Promise.all([
+    api(`/api/models/${encodeURIComponent(modelName)}/symbols`),
+    api(`/api/models/${encodeURIComponent(modelName)}/factors`),
+  ]);
+  renderModelOverview(modelName, symbolsPayload, factorsPayload);
 }
 
 async function updateGroupSelector() {
@@ -445,6 +524,7 @@ el.selectModel.addEventListener("change", async () => {
   try {
     await loadSymbolsForSelectedModel();
     clearModelFactorsView();
+    clearModelOverviewView();
   } catch (err) {
     showAddModelMessage(String(err.message || err), true);
   }
@@ -465,6 +545,14 @@ el.loadDetailBtn.addEventListener("click", async () => {
 el.loadModelFactorsBtn.addEventListener("click", async () => {
   try {
     await loadModelFactors();
+  } catch (err) {
+    showAddModelMessage(String(err.message || err), true);
+  }
+});
+
+el.loadModelOverviewBtn.addEventListener("click", async () => {
+  try {
+    await loadModelOverview();
   } catch (err) {
     showAddModelMessage(String(err.message || err), true);
   }

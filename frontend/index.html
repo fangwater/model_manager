@@ -134,6 +134,46 @@
             </div>
           </article>
 
+          <article class="panel card">
+            <div class="row-head">
+              <h3>Model Overview</h3>
+              <button id="loadModelOverviewBtn" class="btn-ghost" type="button">Load Symbols + Factors</button>
+            </div>
+            <p id="modelOverviewMeta" class="text-muted">
+              Select a model and click "Load Symbols + Factors" to view all symbols and all factors.
+            </p>
+            <div class="overview-panels">
+              <div>
+                <h3>All Symbols</h3>
+                <div class="table-wrap">
+                  <table id="modelSymbolsTable">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th>Group Count</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <h3>All Factors</h3>
+                <div class="table-wrap">
+                  <table id="modelAllFactorsTable">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Factor</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </article>
+
           <div id="detailMeta" class="detail-grid"></div>
 
           <div class="detail-panels">
