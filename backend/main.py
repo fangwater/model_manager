@@ -6,7 +6,6 @@ import logging
 
 import uvicorn
 
-from .auth import AuthManager
 from .config import load_settings
 from .db import Database
 from .registry import ModelRegistry
@@ -21,16 +20,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Model Manager server")
     parser.add_argument("--http-host", default="", help="HTTP listen host")
     parser.add_argument("--http-port", type=int, default=0, help="HTTP listen port")
-    parser.add_argument(
-        "--init-password",
-        default="",
-        help="Initialize password once and exit (fails if already initialized)",
-    )
-    parser.add_argument(
-        "--set-password",
-        default="",
-        help="Force reset password and exit",
-    )
     return parser.parse_args()
 
 
@@ -59,21 +48,6 @@ async def async_main(args: argparse.Namespace) -> int:
     db = Database(settings.db_path)
     db.initialize()
 
-    auth_manager = AuthManager(db=db, token_ttl_seconds=settings.token_ttl_seconds)
-
-    if args.init_password:
-        created = auth_manager.bootstrap_password(args.init_password)
-        if not created:
-            LOG.error("password is already initialized")
-            return 2
-        LOG.info("password initialized")
-        return 0
-
-    if args.set_password:
-        auth_manager.set_password(args.set_password)
-        LOG.info("password updated")
-        return 0
-
     registry = ModelRegistry(db, converted_model_dir=settings.converted_model_dir)
     registry.warmup()
 
@@ -86,7 +60,7 @@ async def async_main(args: argparse.Namespace) -> int:
         )
         await watcher.start()
 
-    app = create_app(settings=settings, registry=registry, auth_manager=auth_manager)
+    app = create_app(settings=settings, registry=registry)
 
     config = uvicorn.Config(app=app, host=http_host, port=http_port, log_level="info")
     server = uvicorn.Server(config)

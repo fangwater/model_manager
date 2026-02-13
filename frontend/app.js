@@ -1,18 +1,11 @@
 const state = {
-  token: localStorage.getItem("model_manager_token") || "",
   models: [],
   symbolsByModel: {},
-  permission: "guest",
+  permission: "public",
   autoRefreshHandle: null,
 };
 
 const el = {
-  authHint: document.getElementById("authHint"),
-  authMessage: document.getElementById("authMessage"),
-  bootstrapBox: document.getElementById("bootstrapBox"),
-  loginBox: document.getElementById("loginBox"),
-  bootstrapForm: document.getElementById("bootstrapForm"),
-  loginForm: document.getElementById("loginForm"),
   dashboard: document.getElementById("dashboard"),
   permissionBadge: document.getElementById("permissionBadge"),
   permissionText: document.getElementById("permissionText"),
@@ -38,24 +31,10 @@ const el = {
   icTableBody: document.querySelector("#icTable tbody"),
 };
 
-function setToken(token) {
-  state.token = token;
-  if (token) {
-    localStorage.setItem("model_manager_token", token);
-  } else {
-    localStorage.removeItem("model_manager_token");
-  }
-}
-
 function setPermission(permission) {
-  state.permission = permission || "guest";
+  state.permission = permission || "public";
   el.permissionBadge.textContent = state.permission;
   el.permissionText.textContent = state.permission;
-}
-
-function showAuthMessage(message, isError = false) {
-  el.authMessage.textContent = message || "";
-  el.authMessage.style.color = isError ? "#be4f22" : "#1f6a90";
 }
 
 function showAddModelMessage(message, isError = false) {
@@ -68,9 +47,6 @@ async function api(path, options = {}) {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
-  if (state.token) {
-    headers.Authorization = `Bearer ${state.token}`;
-  }
 
   const resp = await fetch(path, {
     ...options,
@@ -89,11 +65,6 @@ async function api(path, options = {}) {
 
   if (!resp.ok) {
     const detail = payload.detail || payload.message || `HTTP ${resp.status}`;
-    if (resp.status === 401) {
-      setToken("");
-      setPermission("guest");
-      showDashboard(false);
-    }
     throw new Error(detail);
   }
 
@@ -102,10 +73,8 @@ async function api(path, options = {}) {
 
 function showDashboard(visible) {
   if (visible) {
-    el.dashboard.classList.remove("hidden");
     startAutoRefresh();
   } else {
-    el.dashboard.classList.add("hidden");
     el.modelsContainer.innerHTML = "";
     el.detailMeta.innerHTML = "";
     clearModelFactorsView();
@@ -121,9 +90,6 @@ function startAutoRefresh() {
     return;
   }
   state.autoRefreshHandle = window.setInterval(async () => {
-    if (!state.token) {
-      return;
-    }
     try {
       await loadModels();
     } catch (_) {
@@ -138,16 +104,6 @@ function stopAutoRefresh() {
   }
   window.clearInterval(state.autoRefreshHandle);
   state.autoRefreshHandle = null;
-}
-
-function updateAuthPanels(initialized) {
-  el.bootstrapBox.classList.toggle("hidden", initialized);
-  el.loginBox.classList.toggle("hidden", !initialized);
-  if (initialized) {
-    el.authHint.textContent = "Password is initialized. Login to continue.";
-  } else {
-    el.authHint.textContent = "No password configured. Initialize once.";
-  }
 }
 
 function renderModels() {
@@ -437,56 +393,13 @@ async function loadDetail() {
 
 async function bootstrap() {
   try {
-    const status = await api("/api/auth/status", { headers: {} });
-    updateAuthPanels(Boolean(status.initialized));
-
-    if (state.token) {
-      const me = await api("/api/me");
-      setPermission(me.permission || "readonly");
-      showDashboard(true);
-      await loadModels();
-    }
-  } catch (err) {
-    showAuthMessage(String(err.message || err), true);
-  }
-}
-
-el.bootstrapForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const password = document.getElementById("bootstrapPassword").value;
-  try {
-    await api("/api/auth/bootstrap", {
-      method: "POST",
-      body: JSON.stringify({ password }),
-      headers: {},
-    });
-    showAuthMessage("Password initialized. Please login.");
-    updateAuthPanels(true);
-    event.target.reset();
-  } catch (err) {
-    showAuthMessage(String(err.message || err), true);
-  }
-});
-
-el.loginForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const password = document.getElementById("loginPassword").value;
-  try {
-    const res = await api("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ password }),
-      headers: {},
-    });
-    setToken(res.token);
-    setPermission(res.permission || "readonly");
-    showAuthMessage("Login success.");
+    setPermission("public");
     showDashboard(true);
-    event.target.reset();
     await loadModels();
   } catch (err) {
-    showAuthMessage(String(err.message || err), true);
+    showAddModelMessage(String(err.message || err), true);
   }
-});
+}
 
 el.addModelForm.addEventListener("submit", async (event) => {
   event.preventDefault();

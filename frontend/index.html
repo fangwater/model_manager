@@ -14,42 +14,13 @@
         <p class="subtitle">Readonly console for model artifacts, factors, IC, and HTTP payload mapping.</p>
       </div>
       <div class="status-wrap">
-        <span id="permissionBadge" class="badge">guest</span>
+        <span id="permissionBadge" class="badge">public</span>
         <span id="grpcBadge" class="badge badge-alt">HTTP</span>
       </div>
     </header>
 
     <main>
-      <section id="authSection" class="card auth-card">
-        <h2>Access Control</h2>
-        <p id="authHint" class="text-muted">Checking password status...</p>
-
-        <div id="bootstrapBox" class="panel hidden">
-          <h3>Initialize Password</h3>
-          <form id="bootstrapForm" class="form-grid">
-            <label>
-              Password
-              <input id="bootstrapPassword" type="password" autocomplete="new-password" required />
-            </label>
-            <button type="submit">Initialize</button>
-          </form>
-        </div>
-
-        <div id="loginBox" class="panel hidden">
-          <h3>Login</h3>
-          <form id="loginForm" class="form-grid">
-            <label>
-              Password
-              <input id="loginPassword" type="password" autocomplete="current-password" required />
-            </label>
-            <button type="submit">Login</button>
-          </form>
-        </div>
-
-        <p id="authMessage" class="inline-note"></p>
-      </section>
-
-      <section id="dashboard" class="hidden">
+      <section id="dashboard">
         <div class="stats-grid">
           <article class="card stat-card">
             <p class="stat-label">Models</p>

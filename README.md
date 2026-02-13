@@ -81,22 +81,9 @@ Open UI:
 
 - `http://127.0.0.1:6300`
 
-## Password management (sqlite)
+## Auth
 
-No user concept, only one password.
-
-- first time: initialize from UI (Access Control card)
-- optional CLI init once:
-
-```bash
-./start_model_manager.sh --init-password 'your-passwd'
-```
-
-- optional CLI reset:
-
-```bash
-./start_model_manager.sh --set-password 'new-passwd'
-```
+Auth is disabled. All HTTP endpoints are public.
 
 ## Model Payload API
 
@@ -122,9 +109,6 @@ Compression:
 
 ## HTTP API summary
 
-- `GET /api/auth/status`
-- `POST /api/auth/bootstrap`
-- `POST /api/auth/login`
 - `GET /api/models`
 - `POST /api/models`
 - `POST /api/models/{model_name}/refresh`
@@ -136,7 +120,7 @@ Compression:
 `POST /api/models` and refresh require unique `symbol` per registered root path.
 If one symbol maps to multiple groups, request fails with `400`.
 
-All model endpoints require Bearer token from login.
+All model endpoints are public; no bearer token is required.
 
 `GET /api/models/{model_name}/factors` returns the union factor list across all symbols/groups:
 
@@ -150,7 +134,6 @@ All model endpoints require Bearer token from login.
 
 - `MODEL_MANAGER_HTTP_HOST`
 - `MODEL_MANAGER_HTTP_PORT`
-- `MODEL_MANAGER_TOKEN_TTL`
 - `MODEL_MANAGER_WATCH_ENABLED` (default `1`)
 - `MODEL_MANAGER_WATCH_INTERVAL` (seconds, default `5`)
 - `MODEL_MANAGER_WATCH_DEBOUNCE` (seconds, default `2`)
