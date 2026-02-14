@@ -372,16 +372,20 @@ function renderIcTable(detail) {
     .join("");
 }
 
+function buildGroupQuery() {
+  const groupKey = el.selectGroup.value;
+  return groupKey ? `?group_key=${encodeURIComponent(groupKey)}` : "";
+}
+
 async function loadDetail() {
   const modelName = el.selectModel.value;
   const symbol = el.selectSymbol.value;
-  const groupKey = el.selectGroup.value;
+  const query = buildGroupQuery();
 
   if (!modelName || !symbol) {
     return;
   }
 
-  const query = groupKey ? `?group_key=${encodeURIComponent(groupKey)}` : "";
   const detail = await api(
     `/api/models/${encodeURIComponent(modelName)}/symbols/${encodeURIComponent(symbol)}${query}`
   );

@@ -15,6 +15,11 @@ class AddModelRequest(BaseModel):
     root_path: str = Field(min_length=1, max_length=2048)
 
 
+class SymbolFactorStatsUpdateRequest(BaseModel):
+    mean_values: list[float]
+    variance_values: list[float]
+
+
 def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
     app = FastAPI(title="Model Manager", version="0.1.0")
     app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -31,6 +36,11 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
     async def index() -> FileResponse:
         index_file = frontend_dir / "index.html"
         return FileResponse(index_file)
+
+    @app.get("/config")
+    async def config_page() -> FileResponse:
+        config_file = frontend_dir / "config.html"
+        return FileResponse(config_file)
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
@@ -123,6 +133,47 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         return detail
 
+    @app.get("/api/models/{model_name}/symbols/{symbol}/factor-stats")
+    async def get_symbol_factor_stats(
+        model_name: str,
+        symbol: str,
+        request: Request,
+    ) -> dict[str, object]:
+        group_key = request.query_params.get("group_key")
+        try:
+            data = registry.get_symbol_factor_stats(model_name, symbol, group_key=group_key)
+        except ModelNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except SymbolNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ModelRegistryError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return data
+
+    @app.put("/api/models/{model_name}/symbols/{symbol}/factor-stats")
+    async def update_symbol_factor_stats(
+        model_name: str,
+        symbol: str,
+        payload: SymbolFactorStatsUpdateRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        group_key = request.query_params.get("group_key")
+        try:
+            data = registry.set_symbol_factor_stats(
+                model_name=model_name,
+                symbol=symbol,
+                mean_values=list(payload.mean_values),
+                variance_values=list(payload.variance_values),
+                group_key=group_key,
+            )
+        except ModelNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except SymbolNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ModelRegistryError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return data
+
     @app.get("/api/models/{model_name}/model/{symbol}")
     async def get_model_payload(
         model_name: str,
@@ -153,8 +204,11 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
                     "model_json_path": payload["model_json_path"],
                     "source_root_path": payload["root_path"],
                     "scanned_at": payload["scanned_at"],
+                    "factor_stats_updated_at": payload["factor_stats_updated_at"],
                 },
                 "dim_factors": payload["dim_factors"],
+                "mean_values": payload["mean_values"],
+                "variance_values": payload["variance_values"],
             },
         }
 

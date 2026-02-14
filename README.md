@@ -6,6 +6,7 @@ Python service for:
 - exploring symbol/factor/IC/info via web UI
 - serving XGBoost model json + metadata through HTTP
 - auto-refreshing registered models when artifact files change
+- maintaining per-model per-symbol factor normalization config (`mean[]` / `variance[]`)
 
 ## Artifact layout
 
@@ -80,6 +81,7 @@ Default ports:
 Open UI:
 
 - `http://127.0.0.1:6300`
+- config page: `http://127.0.0.1:6300/config`
 
 ## Auth
 
@@ -96,6 +98,7 @@ Response includes:
 - `payload.model_json` (XGBoost json text, auto-converted from `*_model.pkl` when needed)
 - `payload.metadata` (time window, dim, train samples, etc.)
 - `payload.dim_factors` with `factor_name` and `kendall_tau`
+- `payload.mean_values` / `payload.variance_values` (auto-default to `0/1` if not manually configured)
 
 Selection behavior:
 
@@ -115,6 +118,8 @@ Compression:
 - `GET /api/models/{model_name}/symbols`
 - `GET /api/models/{model_name}/factors`
 - `GET /api/models/{model_name}/symbols/{symbol}?group_key=...`
+- `GET /api/models/{model_name}/symbols/{symbol}/factor-stats?group_key=...`
+- `PUT /api/models/{model_name}/symbols/{symbol}/factor-stats?group_key=...`
 - `GET /api/models/{model_name}/model/{symbol}`
 
 `POST /api/models` and refresh require unique `symbol` per registered root path.
@@ -129,6 +134,19 @@ All model endpoints are public; no bearer token is required.
 - `group_count`
 - `factor_count`
 - `factors` (deduplicated list)
+
+## Factor config
+
+For each `model_name + symbol`, service stores two float arrays aligned by `dim`:
+
+- `mean_values`: factor means
+- `variance_values`: factor variances
+
+Behavior:
+
+- arrays are auto-initialized right after scan/register/refresh (default `mean=0`, `variance=1`)
+- array length must always equal symbol feature dimension (`dim`)
+- `PUT /factor-stats` requires exact length match with current factor count
 
 ## Env vars
 

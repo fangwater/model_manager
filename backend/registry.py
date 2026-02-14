@@ -52,6 +52,7 @@ class ModelRegistry:
         try:
             snapshot = scan_model_root(row.model_name, row.root_path)
             self._assert_unique_symbols(snapshot)
+            self._sync_snapshot_factor_stats(snapshot)
         except Exception as exc:
             if raise_on_error:
                 raise ModelRegistryError(str(exc)) from exc
@@ -81,6 +82,7 @@ class ModelRegistry:
         snapshot = scan_model_root(name, path)
         self._assert_unique_symbols(snapshot)
         self.db.upsert_model(name, snapshot.root_path)
+        self._sync_snapshot_factor_stats(snapshot)
 
         with self._lock:
             self._cache[name] = snapshot
@@ -94,6 +96,7 @@ class ModelRegistry:
         snapshot = scan_model_root(row.model_name, row.root_path)
         self._assert_unique_symbols(snapshot)
         self.db.upsert_model(row.model_name, row.root_path)
+        self._sync_snapshot_factor_stats(snapshot)
         with self._lock:
             self._cache[row.model_name] = snapshot
         return snapshot
@@ -129,9 +132,68 @@ class ModelRegistry:
             raise ModelNotFound(f"model not found: {model_name}")
 
         snapshot = scan_model_root(row.model_name, row.root_path)
+        self._assert_unique_symbols(snapshot)
+        self._sync_snapshot_factor_stats(snapshot)
         with self._lock:
             self._cache[row.model_name] = snapshot
         return snapshot
+
+    def get_symbol_factor_stats(
+        self,
+        model_name: str,
+        symbol: str,
+        group_key: str | None = None,
+    ) -> dict[str, Any]:
+        snapshot = self.get_model_snapshot(model_name)
+        chosen = self._select_record(snapshot, symbol, group_key)
+        factor_stats = self._get_or_init_factor_stats_for_record(snapshot, chosen)
+
+        return {
+            "model_name": snapshot.model_name,
+            "symbol": chosen.symbol,
+            "group_key": chosen.group_key,
+            "factor_count": factor_stats["factor_count"],
+            "factors": factor_stats["factors"],
+            "mean_values": factor_stats["mean_values"],
+            "variance_values": factor_stats["variance_values"],
+            "updated_at": factor_stats["updated_at"],
+        }
+
+    def set_symbol_factor_stats(
+        self,
+        model_name: str,
+        symbol: str,
+        mean_values: list[float],
+        variance_values: list[float],
+        group_key: str | None = None,
+    ) -> dict[str, Any]:
+        snapshot = self.get_model_snapshot(model_name)
+        chosen = self._select_record(snapshot, symbol, group_key)
+        factor_names = [str(item.factor_name or "") for item in chosen.dim_factors]
+        self._validate_symbol_stats_dim(chosen.feature_dim, len(factor_names))
+        factor_count = len(factor_names)
+
+        if len(mean_values) != factor_count or len(variance_values) != factor_count:
+            raise ModelRegistryError(
+                f"mean_values and variance_values must match factor count={factor_count}"
+            )
+
+        try:
+            self.db.replace_symbol_factor_stats(
+                model_name=snapshot.model_name,
+                symbol=chosen.symbol,
+                factor_names=factor_names,
+                mean_values=mean_values,
+                variance_values=variance_values,
+            )
+        except ValueError as exc:
+            raise ModelRegistryError(str(exc)) from exc
+
+        return self.get_symbol_factor_stats(
+            model_name=snapshot.model_name,
+            symbol=chosen.symbol,
+            group_key=chosen.group_key,
+        )
 
     def list_symbols(self, model_name: str) -> list[dict[str, Any]]:
         snapshot = self.get_model_snapshot(model_name)
@@ -222,6 +284,7 @@ class ModelRegistry:
 
         model_json_path = self._resolve_model_json_path(snapshot, record)
         model_json_text = load_model_json_text(model_json_path)
+        factor_stats = self._get_or_init_factor_stats_for_record(snapshot, record)
 
         return {
             "model_name": snapshot.model_name,
@@ -239,6 +302,9 @@ class ModelRegistry:
             "model_json": model_json_text,
             "model_json_path": model_json_path,
             "dim_factors": [asdict(item) for item in record.dim_factors],
+            "mean_values": factor_stats["mean_values"],
+            "variance_values": factor_stats["variance_values"],
+            "factor_stats_updated_at": factor_stats["updated_at"],
         }
 
     def _select_unique_record(self, snapshot: ModelSnapshot, symbol: str) -> SymbolRecord:
@@ -361,3 +427,55 @@ class ModelRegistry:
             reverse=True,
         )
         return candidates[0]
+
+    def _sync_snapshot_factor_stats(self, snapshot: ModelSnapshot) -> None:
+        for record in snapshot.symbols:
+            factor_names = [str(item.factor_name or "") for item in record.dim_factors]
+            self._validate_symbol_stats_dim(record.feature_dim, len(factor_names))
+            self.db.sync_symbol_factor_stats(
+                model_name=snapshot.model_name,
+                symbol=record.symbol,
+                factor_names=factor_names,
+            )
+
+    def _validate_symbol_stats_dim(self, feature_dim: int, factor_count: int) -> None:
+        if int(feature_dim) != int(factor_count):
+            raise ModelRegistryError(
+                f"dimension mismatch: feature_dim={feature_dim}, factor_count={factor_count}"
+            )
+
+    def _get_or_init_factor_stats_for_record(
+        self,
+        snapshot: ModelSnapshot,
+        record: SymbolRecord,
+    ) -> dict[str, Any]:
+        factor_names = [str(item.factor_name or "") for item in record.dim_factors]
+        self._validate_symbol_stats_dim(record.feature_dim, len(factor_names))
+
+        self.db.sync_symbol_factor_stats(
+            model_name=snapshot.model_name,
+            symbol=record.symbol,
+            factor_names=factor_names,
+        )
+        rows = self.db.get_symbol_factor_stats(snapshot.model_name, record.symbol)
+        if len(rows) != record.feature_dim:
+            raise ModelRegistryError(
+                f"factor stats row count mismatch: expected dim={record.feature_dim}, got {len(rows)}"
+            )
+
+        means: list[float] = []
+        variances: list[float] = []
+        latest_updated_at = snapshot.scanned_at
+        for row in rows:
+            means.append(float(row.mean_value))
+            variances.append(float(row.variance_value))
+            if row.updated_at > latest_updated_at:
+                latest_updated_at = row.updated_at
+
+        return {
+            "factor_count": len(factor_names),
+            "factors": factor_names,
+            "mean_values": means,
+            "variance_values": variances,
+            "updated_at": latest_updated_at,
+        }

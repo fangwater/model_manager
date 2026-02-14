@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Model Manager - Factor Config</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="scene-layer"></div>
+    <header class="topbar card">
+      <div>
+        <h1>Factor Config</h1>
+        <p class="subtitle">Configure per-model per-symbol factor mean/variance arrays.</p>
+      </div>
+      <div class="status-wrap">
+        <a href="/" class="badge badge-link">Back To Dashboard</a>
+        <span class="badge">public</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="card explorer-card">
+        <div class="row-head">
+          <h2>Symbol Config Editor</h2>
+          <p class="text-muted">Length must match current feature dim.</p>
+        </div>
+
+        <div class="selectors">
+          <label>
+            Model
+            <select id="selectModel"></select>
+          </label>
+          <label>
+            Symbol
+            <select id="selectSymbol"></select>
+          </label>
+          <label>
+            Group Key
+            <select id="selectGroup"></select>
+          </label>
+          <div class="row-actions">
+            <button id="loadFactorStatsBtn" class="btn-ghost" type="button">Load Config</button>
+            <button id="resetFactorStatsBtn" class="btn-ghost" type="button">Reset 0/1</button>
+            <button id="saveFactorStatsBtn" type="button">Save Config</button>
+          </div>
+        </div>
+
+        <p id="configMessage" class="inline-note"></p>
+        <p id="factorStatsMeta" class="text-muted">
+          Select model/symbol and click "Load Config" to edit factor mean/variance arrays.
+        </p>
+
+        <div class="table-wrap">
+          <table id="factorStatsTable">
+            <thead>
+              <tr>
+                <th>Dim</th>
+                <th>Factor</th>
+                <th>Mean</th>
+                <th>Variance</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/assets/config.js"></script>
+  </body>
+</html>

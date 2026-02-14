@@ -167,6 +167,11 @@ h3 {
   background: rgba(255, 255, 255, 0.88);
 }
 
+.badge-link {
+  text-decoration: none;
+  cursor: pointer;
+}
+
 .badge-alt {
   border-color: rgba(13, 190, 168, 0.42);
   color: #087f70;
@@ -253,6 +258,12 @@ button:active {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.row-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .model-cards {
@@ -364,6 +375,11 @@ td {
 
 th {
   color: var(--ink-1);
+}
+
+.factor-input {
+  width: 140px;
+  max-width: 100%;
 }
 
 tbody tr:nth-child(even) {
