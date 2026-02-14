@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,13 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
     async def index() -> FileResponse:
         index_file = frontend_dir / "index.html"
         return FileResponse(index_file)
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        favicon_file = frontend_dir / "favicon.ico"
+        if favicon_file.exists():
+            return FileResponse(favicon_file)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
