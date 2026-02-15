@@ -165,7 +165,7 @@ function resetFactorStatsToDefault() {
   const varianceInputs = [...el.factorStatsTableBody.querySelectorAll('input[data-role="variance"]')];
 
   for (const input of meanInputs) {
-    input.value = "0";
+    input.value = "0.2";
   }
   for (const input of varianceInputs) {
     input.value = "1";

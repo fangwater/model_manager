@@ -98,7 +98,7 @@ Response includes:
 - `payload.model_json` (XGBoost json text, auto-converted from `*_model.pkl` when needed)
 - `payload.metadata` (time window, dim, train samples, etc.)
 - `payload.dim_factors` with `factor_name` and `kendall_tau`
-- `payload.mean_values` / `payload.variance_values` (auto-default to `0/1` if not manually configured)
+- `payload.mean_values` / `payload.variance_values` (auto-default to `0.2/1` if not manually configured)
 
 Selection behavior:
 
@@ -144,7 +144,7 @@ For each `model_name + symbol`, service stores two float arrays aligned by `dim`
 
 Behavior:
 
-- arrays are auto-initialized right after scan/register/refresh (default `mean=0`, `variance=1`)
+- arrays are auto-initialized right after scan/register/refresh (default `mean=0.2`, `variance=1`)
 - array length must always equal symbol feature dimension (`dim`)
 - `PUT /factor-stats` requires exact length match with current factor count
 

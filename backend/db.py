@@ -174,7 +174,7 @@ class Database:
         model_name: str,
         symbol: str,
         factor_names: list[str],
-        default_mean: float = 0.0,
+        default_mean: float = 0.2,
         default_variance: float = 1.0,
     ) -> None:
         now = utc_now_iso()
