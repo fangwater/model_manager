@@ -137,16 +137,27 @@ All model endpoints are public; no bearer token is required.
 
 ## Factor config
 
-For each `model_name + symbol`, service stores two float arrays aligned by `dim`:
+For each `model_name + symbol`, service stores symbol-level factor stats.
+`GET/PUT /factor-stats` uses `factor_configs` only:
 
-- `mean_values`: factor means
-- `variance_values`: factor variances
+- `factor_configs`: array of objects (`dim`, `factor_name`, `mean_values`, `variance_values`)
+
+`factor_configs` item format:
+
+```json
+{
+  "dim": 0,
+  "factor_name": "book_imbalance_10",
+  "mean_values": [0.2],
+  "variance_values": [1.0]
+}
+```
 
 Behavior:
 
-- arrays are auto-initialized right after scan/register/refresh (default `mean=0.2`, `variance=1`)
-- array length must always equal symbol feature dimension (`dim`)
-- `PUT /factor-stats` requires exact length match with current factor count
+- config is auto-initialized right after scan/register/refresh (default `mean=0.2`, `variance=1`)
+- symbol dimension must always equal current factor count
+- in `factor_configs`, each factor must have exactly one value in each array
 
 ## Env vars
 

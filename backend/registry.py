@@ -147,15 +147,18 @@ class ModelRegistry:
         snapshot = self.get_model_snapshot(model_name)
         chosen = self._select_record(snapshot, symbol, group_key)
         factor_stats = self._get_or_init_factor_stats_for_record(snapshot, chosen)
+        factor_configs = self._build_factor_configs(
+            factor_names=factor_stats["factors"],
+            mean_values=factor_stats["mean_values"],
+            variance_values=factor_stats["variance_values"],
+        )
 
         return {
             "model_name": snapshot.model_name,
             "symbol": chosen.symbol,
             "group_key": chosen.group_key,
             "factor_count": factor_stats["factor_count"],
-            "factors": factor_stats["factors"],
-            "mean_values": factor_stats["mean_values"],
-            "variance_values": factor_stats["variance_values"],
+            "factor_configs": factor_configs,
             "updated_at": factor_stats["updated_at"],
         }
 
@@ -163,20 +166,17 @@ class ModelRegistry:
         self,
         model_name: str,
         symbol: str,
-        mean_values: list[float],
-        variance_values: list[float],
+        factor_configs: list[dict[str, Any]],
         group_key: str | None = None,
     ) -> dict[str, Any]:
         snapshot = self.get_model_snapshot(model_name)
         chosen = self._select_record(snapshot, symbol, group_key)
         factor_names = [str(item.factor_name or "") for item in chosen.dim_factors]
         self._validate_symbol_stats_dim(chosen.feature_dim, len(factor_names))
-        factor_count = len(factor_names)
-
-        if len(mean_values) != factor_count or len(variance_values) != factor_count:
-            raise ModelRegistryError(
-                f"mean_values and variance_values must match factor count={factor_count}"
-            )
+        mean_values, variance_values = self._decode_factor_configs(
+            factor_names=factor_names,
+            factor_configs=factor_configs,
+        )
 
         try:
             self.db.replace_symbol_factor_stats(
@@ -479,3 +479,94 @@ class ModelRegistry:
             "variance_values": variances,
             "updated_at": latest_updated_at,
         }
+
+    def _build_factor_configs(
+        self,
+        factor_names: list[str],
+        mean_values: list[float],
+        variance_values: list[float],
+    ) -> list[dict[str, Any]]:
+        if len(factor_names) != len(mean_values) or len(factor_names) != len(variance_values):
+            raise ModelRegistryError(
+                "cannot build factor_configs: factors, mean_values and variance_values length mismatch"
+            )
+
+        output: list[dict[str, Any]] = []
+        for idx, factor_name in enumerate(factor_names):
+            output.append(
+                {
+                    "dim": idx,
+                    "factor_name": factor_name,
+                    "mean_values": [float(mean_values[idx])],
+                    "variance_values": [float(variance_values[idx])],
+                }
+            )
+        return output
+
+    def _decode_factor_configs(
+        self,
+        factor_names: list[str],
+        factor_configs: list[dict[str, Any]],
+    ) -> tuple[list[float], list[float]]:
+        if len(factor_configs) != len(factor_names):
+            raise ModelRegistryError(
+                f"factor_configs length mismatch: expected {len(factor_names)}, got {len(factor_configs)}"
+            )
+
+        config_by_dim: dict[int, dict[str, Any]] = {}
+        for idx, raw in enumerate(factor_configs):
+            raw_dim = raw.get("dim")
+            if not isinstance(raw_dim, int):
+                raise ModelRegistryError(f"factor_configs[{idx}].dim must be an integer")
+            if raw_dim < 0 or raw_dim >= len(factor_names):
+                raise ModelRegistryError(
+                    f"factor_configs[{idx}].dim out of range: {raw_dim}, expected 0..{len(factor_names) - 1}"
+                )
+
+            if raw_dim in config_by_dim:
+                raise ModelRegistryError(f"factor_configs has duplicated dim={raw_dim}")
+
+            factor_name = str(raw.get("factor_name") or "").strip()
+            if not factor_name:
+                raise ModelRegistryError(f"factor_configs[{idx}].factor_name must not be empty")
+            expected_factor_name = factor_names[raw_dim]
+            if factor_name != expected_factor_name:
+                raise ModelRegistryError(
+                    f"factor_configs[{idx}] factor_name mismatch at dim={raw_dim}: "
+                    f"expected '{expected_factor_name}', got '{factor_name}'"
+                )
+
+            config_by_dim[raw_dim] = raw
+
+        if len(config_by_dim) != len(factor_names):
+            missing_dims = [idx for idx in range(len(factor_names)) if idx not in config_by_dim]
+            raise ModelRegistryError(
+                f"factor_configs missing dims: {', '.join(str(item) for item in missing_dims[:8])}"
+            )
+
+        means: list[float] = []
+        variances: list[float] = []
+        for dim, factor_name in enumerate(factor_names):
+            entry = config_by_dim[dim]
+            mean_array = entry.get("mean_values")
+            variance_array = entry.get("variance_values")
+            if not isinstance(mean_array, list) or not isinstance(variance_array, list):
+                raise ModelRegistryError(
+                    f"factor '{factor_name}' must provide mean_values and variance_values as arrays"
+                )
+            if len(mean_array) != 1 or len(variance_array) != 1:
+                raise ModelRegistryError(
+                    f"factor '{factor_name}' expects single-value arrays: "
+                    f"mean_values={len(mean_array)}, variance_values={len(variance_array)}"
+                )
+
+            try:
+                mean_value = float(mean_array[0])
+                variance_value = float(variance_array[0])
+            except (TypeError, ValueError) as exc:
+                raise ModelRegistryError(f"factor '{factor_name}' contains non-numeric values") from exc
+
+            means.append(mean_value)
+            variances.append(variance_value)
+
+        return means, variances

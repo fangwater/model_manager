@@ -1,6 +1,7 @@
 const state = {
   models: [],
   symbolsByModel: {},
+  loadedFactorNames: [],
 };
 
 const el = {
@@ -11,7 +12,7 @@ const el = {
   resetFactorStatsBtn: document.getElementById("resetFactorStatsBtn"),
   saveFactorStatsBtn: document.getElementById("saveFactorStatsBtn"),
   factorStatsMeta: document.getElementById("factorStatsMeta"),
-  factorStatsTableBody: document.querySelector("#factorStatsTable tbody"),
+  factorJsonEditor: document.getElementById("factorJsonEditor"),
   configMessage: document.getElementById("configMessage"),
 };
 
@@ -60,116 +61,197 @@ async function api(path, options = {}) {
 
 function clearFactorStatsView() {
   el.factorStatsMeta.textContent =
-    "Select model/symbol and click \"Load Config\" to edit factor mean/variance arrays.";
-  el.factorStatsTableBody.innerHTML = "";
+    'Select model/symbol and click "Load Config" to edit the symbol-level factor JSON.';
+  el.factorJsonEditor.value = "";
+  state.loadedFactorNames = [];
 }
 
-function formatNumberInput(value) {
+function formatNumber(value) {
   if (value == null || Number.isNaN(Number(value))) {
-    return "";
+    return 0;
   }
-  return String(Number(value));
+  return Number(value);
+}
+
+function buildFactorConfigs(payload) {
+  if (!Array.isArray(payload.factor_configs)) {
+    throw new Error("response missing factor_configs array");
+  }
+
+  return payload.factor_configs.map((item, idx) => ({
+    dim: Number.isInteger(item.dim) ? item.dim : idx,
+    factor_name: String(item.factor_name || "").trim(),
+    mean_values: Array.isArray(item.mean_values)
+      ? item.mean_values.map((value) => formatNumber(value))
+      : [],
+    variance_values: Array.isArray(item.variance_values)
+      ? item.variance_values.map((value) => formatNumber(value))
+      : [],
+  }));
 }
 
 function renderFactorStats(payload) {
-  const factors = Array.isArray(payload.factors) ? payload.factors : [];
-  const means = Array.isArray(payload.mean_values) ? payload.mean_values : [];
-  const variances = Array.isArray(payload.variance_values) ? payload.variance_values : [];
-
-  if (factors.length !== means.length || factors.length !== variances.length) {
-    throw new Error(
-      `factor stats length mismatch: factors=${factors.length}, mean_values=${means.length}, variance_values=${variances.length}`
-    );
-  }
+  const factorConfigs = buildFactorConfigs(payload);
+  state.loadedFactorNames = factorConfigs.map((item) => String(item.factor_name || "")).filter(Boolean);
 
   el.factorStatsMeta.textContent =
-    `model=${payload.model_name || "-"}, symbol=${payload.symbol || "-"}, dim=${payload.factor_count || factors.length}, updated=${payload.updated_at || "-"}`;
+    `model=${payload.model_name || "-"}, symbol=${payload.symbol || "-"}, dim=${payload.factor_count || factorConfigs.length}, updated=${payload.updated_at || "-"}`;
 
-  if (!factors.length) {
-    el.factorStatsTableBody.innerHTML = `
-      <tr>
-        <td colspan="4">No factor config rows found.</td>
-      </tr>
-    `;
+  const editorDoc = {
+    model_name: payload.model_name || "",
+    symbol: payload.symbol || "",
+    group_key: payload.group_key || "",
+    factor_configs: factorConfigs,
+  };
+  el.factorJsonEditor.value = `${JSON.stringify(editorDoc, null, 2)}\n`;
+}
+
+function parseEditorJson() {
+  const rawText = (el.factorJsonEditor.value || "").trim();
+  if (!rawText) {
+    throw new Error("JSON editor is empty");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch (err) {
+    throw new Error(`invalid JSON: ${String(err.message || err)}`);
+  }
+
+  if (Array.isArray(parsed)) {
+    return { factor_configs: parsed };
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("JSON must be an object or factor_configs array");
+  }
+
+  return parsed;
+}
+
+function normalizeSingleValueArray(raw, path) {
+  if (!Array.isArray(raw)) {
+    throw new Error(`${path} must be an array`);
+  }
+  if (raw.length !== 1) {
+    throw new Error(`${path} must contain exactly one numeric value`);
+  }
+
+  const value = Number(raw[0]);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${path}[0] is not a finite number`);
+  }
+  return [value];
+}
+
+function validateFactorConfigs(configs) {
+  const dims = configs.map((item) => item.dim);
+  const duplicateDims = dims.filter((dim, idx) => dims.indexOf(dim) !== idx);
+  if (duplicateDims.length) {
+    throw new Error(`duplicated dim in JSON: ${[...new Set(duplicateDims)].join(", ")}`);
+  }
+
+  if (!state.loadedFactorNames.length) {
     return;
   }
 
-  el.factorStatsTableBody.innerHTML = factors
-    .map(
-      (factorName, idx) => `
-      <tr>
-        <td>${idx}</td>
-        <td>${escapeHtml(factorName || "")}</td>
-        <td>
-          <input
-            class="factor-input"
-            type="number"
-            step="any"
-            data-role="mean"
-            data-index="${idx}"
-            value="${escapeHtml(formatNumberInput(means[idx]))}"
-          />
-        </td>
-        <td>
-          <input
-            class="factor-input"
-            type="number"
-            step="any"
-            data-role="variance"
-            data-index="${idx}"
-            value="${escapeHtml(formatNumberInput(variances[idx]))}"
-          />
-        </td>
-      </tr>`
-    )
-    .join("");
-}
-
-function collectFactorStatsPayload() {
-  const meanInputs = [...el.factorStatsTableBody.querySelectorAll('input[data-role="mean"]')];
-  const varianceInputs = [...el.factorStatsTableBody.querySelectorAll('input[data-role="variance"]')];
-
-  if (!meanInputs.length && !varianceInputs.length) {
-    throw new Error("no factor rows loaded");
-  }
-  if (meanInputs.length !== varianceInputs.length) {
+  if (configs.length !== state.loadedFactorNames.length) {
     throw new Error(
-      `dimension mismatch: mean_values=${meanInputs.length}, variance_values=${varianceInputs.length}`
+      `factor_configs length mismatch: expected ${state.loadedFactorNames.length}, got ${configs.length}`
     );
   }
 
-  const meanValues = meanInputs.map((node, idx) => {
-    const value = Number(node.value);
-    if (!Number.isFinite(value)) {
-      throw new Error(`mean_values[${idx}] is not a finite number`);
+  const expectedDims = new Set(state.loadedFactorNames.map((_, idx) => idx));
+  const actualDims = new Set(dims);
+  const missingDims = [...expectedDims].filter((dim) => !actualDims.has(dim));
+  const extraDims = [...actualDims].filter((dim) => !expectedDims.has(dim));
+  if (missingDims.length || extraDims.length) {
+    const parts = [];
+    if (missingDims.length) {
+      parts.push(`missing dims: ${missingDims.slice(0, 8).join(", ")}`);
     }
-    return value;
+    if (extraDims.length) {
+      parts.push(`unknown dims: ${extraDims.slice(0, 8).join(", ")}`);
+    }
+    throw new Error(parts.join("; "));
+  }
+
+  for (const item of configs) {
+    const expectedName = state.loadedFactorNames[item.dim];
+    if (item.factor_name !== expectedName) {
+      throw new Error(
+        `factor name mismatch at dim=${item.dim}: expected ${expectedName}, got ${item.factor_name}`
+      );
+    }
+  }
+}
+
+function collectFactorStatsPayload() {
+  const parsed = parseEditorJson();
+  const rawConfigs = parsed.factor_configs;
+
+  if (!Array.isArray(rawConfigs)) {
+    throw new Error('JSON must include field "factor_configs" as an array');
+  }
+
+  if (!rawConfigs.length) {
+    throw new Error("factor_configs cannot be empty");
+  }
+
+  const factorConfigs = rawConfigs.map((item, idx) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`factor_configs[${idx}] must be an object`);
+    }
+
+    const dim = Number(item.dim);
+    if (!Number.isInteger(dim) || dim < 0) {
+      throw new Error(`factor_configs[${idx}].dim must be a non-negative integer`);
+    }
+
+    const factorName = String(item.factor_name || "").trim();
+    if (!factorName) {
+      throw new Error(`factor_configs[${idx}].factor_name must not be empty`);
+    }
+
+    return {
+      dim,
+      factor_name: factorName,
+      mean_values: normalizeSingleValueArray(item.mean_values, `factor_configs[${idx}].mean_values`),
+      variance_values: normalizeSingleValueArray(
+        item.variance_values,
+        `factor_configs[${idx}].variance_values`
+      ),
+    };
   });
 
-  const varianceValues = varianceInputs.map((node, idx) => {
-    const value = Number(node.value);
-    if (!Number.isFinite(value)) {
-      throw new Error(`variance_values[${idx}] is not a finite number`);
-    }
-    return value;
-  });
+  validateFactorConfigs(factorConfigs);
 
   return {
-    mean_values: meanValues,
-    variance_values: varianceValues,
+    factor_configs: factorConfigs,
   };
 }
 
 function resetFactorStatsToDefault() {
-  const meanInputs = [...el.factorStatsTableBody.querySelectorAll('input[data-role="mean"]')];
-  const varianceInputs = [...el.factorStatsTableBody.querySelectorAll('input[data-role="variance"]')];
+  const parsed = parseEditorJson();
+  const rawConfigs = parsed.factor_configs;
+  if (!Array.isArray(rawConfigs) || !rawConfigs.length) {
+    throw new Error('JSON must include non-empty "factor_configs" array');
+  }
 
-  for (const input of meanInputs) {
-    input.value = "0.2";
-  }
-  for (const input of varianceInputs) {
-    input.value = "1";
-  }
+  parsed.factor_configs = rawConfigs.map((item, idx) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`factor_configs[${idx}] must be an object`);
+    }
+
+    return {
+      ...item,
+      mean_values: [0.2],
+      variance_values: [1.0],
+    };
+  });
+
+  el.factorJsonEditor.value = `${JSON.stringify(parsed, null, 2)}\n`;
 }
 
 function buildGroupQuery() {
@@ -269,7 +351,7 @@ async function saveFactorStats() {
     }
   );
   renderFactorStats(saved);
-  showMessage(`Saved factor stats for ${modelName}/${symbol}.`);
+  showMessage(`Saved symbol JSON config for ${modelName}/${symbol}.`);
 }
 
 async function bootstrap() {

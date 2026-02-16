@@ -15,9 +15,15 @@ class AddModelRequest(BaseModel):
     root_path: str = Field(min_length=1, max_length=2048)
 
 
-class SymbolFactorStatsUpdateRequest(BaseModel):
+class SymbolFactorConfigItem(BaseModel):
+    dim: int = Field(ge=0)
+    factor_name: str = Field(min_length=1)
     mean_values: list[float]
     variance_values: list[float]
+
+
+class SymbolFactorStatsUpdateRequest(BaseModel):
+    factor_configs: list[SymbolFactorConfigItem] = Field(min_length=1)
 
 
 def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
@@ -158,12 +164,20 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
         request: Request,
     ) -> dict[str, object]:
         group_key = request.query_params.get("group_key")
+        factor_configs = [
+            {
+                "dim": int(item.dim),
+                "factor_name": item.factor_name,
+                "mean_values": list(item.mean_values),
+                "variance_values": list(item.variance_values),
+            }
+            for item in payload.factor_configs
+        ]
         try:
             data = registry.set_symbol_factor_stats(
                 model_name=model_name,
                 symbol=symbol,
-                mean_values=list(payload.mean_values),
-                variance_values=list(payload.variance_values),
+                factor_configs=factor_configs,
                 group_key=group_key,
             )
         except ModelNotFound as exc:
