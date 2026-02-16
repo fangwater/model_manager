@@ -130,19 +130,21 @@ function parseEditorJson() {
   return parsed;
 }
 
-function normalizeSingleValueArray(raw, path) {
+function normalizeDimArray(raw, path, expectedDim) {
   if (!Array.isArray(raw)) {
     throw new Error(`${path} must be an array`);
   }
-  if (raw.length !== 1) {
-    throw new Error(`${path} must contain exactly one numeric value`);
+  if (raw.length !== expectedDim) {
+    throw new Error(`${path} must contain exactly ${expectedDim} numeric values`);
   }
 
-  const value = Number(raw[0]);
-  if (!Number.isFinite(value)) {
-    throw new Error(`${path}[0] is not a finite number`);
-  }
-  return [value];
+  return raw.map((item, idx) => {
+    const value = Number(item);
+    if (!Number.isFinite(value)) {
+      throw new Error(`${path}[${idx}] is not a finite number`);
+    }
+    return value;
+  });
 }
 
 function validateFactorConfigs(configs) {
@@ -198,6 +200,7 @@ function collectFactorStatsPayload() {
   if (!rawConfigs.length) {
     throw new Error("factor_configs cannot be empty");
   }
+  const expectedDim = state.loadedFactorNames.length || rawConfigs.length;
 
   const factorConfigs = rawConfigs.map((item, idx) => {
     if (!item || typeof item !== "object") {
@@ -205,8 +208,8 @@ function collectFactorStatsPayload() {
     }
 
     const dim = Number(item.dim);
-    if (!Number.isInteger(dim) || dim < 0) {
-      throw new Error(`factor_configs[${idx}].dim must be a non-negative integer`);
+    if (!Number.isInteger(dim) || dim < 0 || dim >= expectedDim) {
+      throw new Error(`factor_configs[${idx}].dim must be an integer in [0, ${expectedDim - 1}]`);
     }
 
     const factorName = String(item.factor_name || "").trim();
@@ -217,10 +220,11 @@ function collectFactorStatsPayload() {
     return {
       dim,
       factor_name: factorName,
-      mean_values: normalizeSingleValueArray(item.mean_values, `factor_configs[${idx}].mean_values`),
-      variance_values: normalizeSingleValueArray(
+      mean_values: normalizeDimArray(item.mean_values, `factor_configs[${idx}].mean_values`, expectedDim),
+      variance_values: normalizeDimArray(
         item.variance_values,
-        `factor_configs[${idx}].variance_values`
+        `factor_configs[${idx}].variance_values`,
+        expectedDim
       ),
     };
   });
@@ -238,6 +242,7 @@ function resetFactorStatsToDefault() {
   if (!Array.isArray(rawConfigs) || !rawConfigs.length) {
     throw new Error('JSON must include non-empty "factor_configs" array');
   }
+  const expectedDim = state.loadedFactorNames.length || rawConfigs.length;
 
   parsed.factor_configs = rawConfigs.map((item, idx) => {
     if (!item || typeof item !== "object") {
@@ -246,8 +251,8 @@ function resetFactorStatsToDefault() {
 
     return {
       ...item,
-      mean_values: [0.2],
-      variance_values: [1.0],
+      mean_values: Array(expectedDim).fill(0.2),
+      variance_values: Array(expectedDim).fill(1.0),
     };
   });
 

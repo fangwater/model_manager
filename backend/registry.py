@@ -147,18 +147,13 @@ class ModelRegistry:
         snapshot = self.get_model_snapshot(model_name)
         chosen = self._select_record(snapshot, symbol, group_key)
         factor_stats = self._get_or_init_factor_stats_for_record(snapshot, chosen)
-        factor_configs = self._build_factor_configs(
-            factor_names=factor_stats["factors"],
-            mean_values=factor_stats["mean_values"],
-            variance_values=factor_stats["variance_values"],
-        )
 
         return {
             "model_name": snapshot.model_name,
             "symbol": chosen.symbol,
             "group_key": chosen.group_key,
             "factor_count": factor_stats["factor_count"],
-            "factor_configs": factor_configs,
+            "factor_configs": factor_stats["factor_configs"],
             "updated_at": factor_stats["updated_at"],
         }
 
@@ -173,7 +168,7 @@ class ModelRegistry:
         chosen = self._select_record(snapshot, symbol, group_key)
         factor_names = [str(item.factor_name or "") for item in chosen.dim_factors]
         self._validate_symbol_stats_dim(chosen.feature_dim, len(factor_names))
-        mean_values, variance_values = self._decode_factor_configs(
+        factor_mean_values, factor_variance_values = self._decode_factor_configs(
             factor_names=factor_names,
             factor_configs=factor_configs,
         )
@@ -183,8 +178,8 @@ class ModelRegistry:
                 model_name=snapshot.model_name,
                 symbol=chosen.symbol,
                 factor_names=factor_names,
-                mean_values=mean_values,
-                variance_values=variance_values,
+                factor_mean_values=factor_mean_values,
+                factor_variance_values=factor_variance_values,
             )
         except ValueError as exc:
             raise ModelRegistryError(str(exc)) from exc
@@ -302,8 +297,7 @@ class ModelRegistry:
             "model_json": model_json_text,
             "model_json_path": model_json_path,
             "dim_factors": [asdict(item) for item in record.dim_factors],
-            "mean_values": factor_stats["mean_values"],
-            "variance_values": factor_stats["variance_values"],
+            "factor_configs": factor_stats["factor_configs"],
             "factor_stats_updated_at": factor_stats["updated_at"],
         }
 
@@ -465,49 +459,52 @@ class ModelRegistry:
 
         means: list[float] = []
         variances: list[float] = []
+        factor_configs: list[dict[str, Any]] = []
         latest_updated_at = snapshot.scanned_at
+        expected_dim = record.feature_dim
         for row in rows:
-            means.append(float(row.mean_value))
-            variances.append(float(row.variance_value))
+            if len(row.mean_values) != expected_dim or len(row.variance_values) != expected_dim:
+                raise ModelRegistryError(
+                    f"factor '{row.factor_name}' vector length mismatch: "
+                    f"mean_values={len(row.mean_values)}, variance_values={len(row.variance_values)}, "
+                    f"expected={expected_dim}"
+                )
+
+            dim = int(row.factor_index)
+            if dim < 0 or dim >= expected_dim:
+                raise ModelRegistryError(
+                    f"factor index out of range for '{row.factor_name}': index={dim}, expected 0..{expected_dim - 1}"
+                )
+
+            means.append(float(row.mean_values[dim]))
+            variances.append(float(row.variance_values[dim]))
+            factor_configs.append(
+                {
+                    "dim": dim,
+                    "factor_name": row.factor_name,
+                    "mean_values": list(row.mean_values),
+                    "variance_values": list(row.variance_values),
+                }
+            )
             if row.updated_at > latest_updated_at:
                 latest_updated_at = row.updated_at
+
+        factor_configs.sort(key=lambda item: int(item["dim"]))
 
         return {
             "factor_count": len(factor_names),
             "factors": factor_names,
             "mean_values": means,
             "variance_values": variances,
+            "factor_configs": factor_configs,
             "updated_at": latest_updated_at,
         }
-
-    def _build_factor_configs(
-        self,
-        factor_names: list[str],
-        mean_values: list[float],
-        variance_values: list[float],
-    ) -> list[dict[str, Any]]:
-        if len(factor_names) != len(mean_values) or len(factor_names) != len(variance_values):
-            raise ModelRegistryError(
-                "cannot build factor_configs: factors, mean_values and variance_values length mismatch"
-            )
-
-        output: list[dict[str, Any]] = []
-        for idx, factor_name in enumerate(factor_names):
-            output.append(
-                {
-                    "dim": idx,
-                    "factor_name": factor_name,
-                    "mean_values": [float(mean_values[idx])],
-                    "variance_values": [float(variance_values[idx])],
-                }
-            )
-        return output
 
     def _decode_factor_configs(
         self,
         factor_names: list[str],
         factor_configs: list[dict[str, Any]],
-    ) -> tuple[list[float], list[float]]:
+    ) -> tuple[list[list[float]], list[list[float]]]:
         if len(factor_configs) != len(factor_names):
             raise ModelRegistryError(
                 f"factor_configs length mismatch: expected {len(factor_names)}, got {len(factor_configs)}"
@@ -544,8 +541,9 @@ class ModelRegistry:
                 f"factor_configs missing dims: {', '.join(str(item) for item in missing_dims[:8])}"
             )
 
-        means: list[float] = []
-        variances: list[float] = []
+        factor_mean_values: list[list[float]] = []
+        factor_variance_values: list[list[float]] = []
+        expected_dim = len(factor_names)
         for dim, factor_name in enumerate(factor_names):
             entry = config_by_dim[dim]
             mean_array = entry.get("mean_values")
@@ -554,19 +552,19 @@ class ModelRegistry:
                 raise ModelRegistryError(
                     f"factor '{factor_name}' must provide mean_values and variance_values as arrays"
                 )
-            if len(mean_array) != 1 or len(variance_array) != 1:
+            if len(mean_array) != expected_dim or len(variance_array) != expected_dim:
                 raise ModelRegistryError(
-                    f"factor '{factor_name}' expects single-value arrays: "
+                    f"factor '{factor_name}' expects dim-length arrays (dim={expected_dim}): "
                     f"mean_values={len(mean_array)}, variance_values={len(variance_array)}"
                 )
 
             try:
-                mean_value = float(mean_array[0])
-                variance_value = float(variance_array[0])
+                normalized_means = [float(item) for item in mean_array]
+                normalized_variances = [float(item) for item in variance_array]
             except (TypeError, ValueError) as exc:
                 raise ModelRegistryError(f"factor '{factor_name}' contains non-numeric values") from exc
 
-            means.append(mean_value)
-            variances.append(variance_value)
+            factor_mean_values.append(normalized_means)
+            factor_variance_values.append(normalized_variances)
 
-        return means, variances
+        return factor_mean_values, factor_variance_values

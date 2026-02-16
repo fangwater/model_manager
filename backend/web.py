@@ -221,8 +221,7 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
                     "factor_stats_updated_at": payload["factor_stats_updated_at"],
                 },
                 "dim_factors": payload["dim_factors"],
-                "mean_values": payload["mean_values"],
-                "variance_values": payload["variance_values"],
+                "factor_configs": payload["factor_configs"],
             },
         }
 
