@@ -15,17 +15,6 @@ class AddModelRequest(BaseModel):
     root_path: str = Field(min_length=1, max_length=2048)
 
 
-class SymbolFactorConfigItem(BaseModel):
-    dim: int = Field(ge=0)
-    factor_name: str = Field(min_length=1)
-    mean_values: list[float]
-    variance_values: list[float]
-
-
-class SymbolFactorStatsUpdateRequest(BaseModel):
-    factor_configs: list[SymbolFactorConfigItem] = Field(min_length=1)
-
-
 def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
     app = FastAPI(title="Model Manager", version="0.1.0")
     app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -160,24 +149,56 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
     async def update_symbol_factor_stats(
         model_name: str,
         symbol: str,
-        payload: SymbolFactorStatsUpdateRequest,
         request: Request,
     ) -> dict[str, object]:
         group_key = request.query_params.get("group_key")
-        factor_configs = [
-            {
-                "dim": int(item.dim),
-                "factor_name": item.factor_name,
-                "mean_values": list(item.mean_values),
-                "variance_values": list(item.variance_values),
-            }
-            for item in payload.factor_configs
-        ]
+        try:
+            raw_payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="request body must be valid JSON",
+            ) from exc
+
+        if not isinstance(raw_payload, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="request body must be an object with symbol key",
+            )
+
+        symbol_entry = raw_payload.get(symbol)
+        if symbol_entry is None:
+            symbol_entry = raw_payload.get(symbol.strip().upper())
+        if symbol_entry is None and len(raw_payload) == 1:
+            symbol_entry = next(iter(raw_payload.values()))
+
+        if not isinstance(symbol_entry, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"request body must include symbol key '{symbol}' with object value",
+            )
+
+        mean_values = symbol_entry.get("mean_values")
+        variance_values = symbol_entry.get("variance_values")
+        if not isinstance(mean_values, list) or not isinstance(variance_values, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="symbol config must include mean_values and variance_values arrays",
+            )
+        factor_names = symbol_entry.get("factor_names")
+        if factor_names is not None and not isinstance(factor_names, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="factor_names must be an array when provided",
+            )
+
         try:
             data = registry.set_symbol_factor_stats(
                 model_name=model_name,
                 symbol=symbol,
-                factor_configs=factor_configs,
+                mean_values=list(mean_values),
+                variance_values=list(variance_values),
+                factor_names=list(factor_names) if factor_names is not None else None,
                 group_key=group_key,
             )
         except ModelNotFound as exc:
@@ -221,7 +242,7 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
                     "factor_stats_updated_at": payload["factor_stats_updated_at"],
                 },
                 "dim_factors": payload["dim_factors"],
-                "factor_configs": payload["factor_configs"],
+                "symbol_stats": payload["symbol_stats"],
             },
         }
 

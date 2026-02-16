@@ -281,12 +281,14 @@ class Database:
                     expected_dim=expected_dim,
                     fill_value=safe_default_mean,
                     fallback_scalar=_safe_float64(existing["mean_value"]),
+                    fallback_index=idx,
                 )
                 variance_values = _normalize_float_vector(
                     _parse_float_array(existing["variance_values_json"]),
                     expected_dim=expected_dim,
                     fill_value=safe_default_variance,
                     fallback_scalar=_safe_float64(existing["variance_value"]),
+                    fallback_index=idx,
                 )
 
                 if (
@@ -364,12 +366,14 @@ class Database:
                 expected_dim=expected_dim,
                 fill_value=_safe_float64(row["mean_value"]),
                 fallback_scalar=_safe_float64(row["mean_value"]),
+                fallback_index=int(row["factor_index"]),
             )
             variance_values = _normalize_float_vector(
                 _parse_float_array(row["variance_values_json"]),
                 expected_dim=expected_dim,
                 fill_value=_safe_float64(row["variance_value"]),
                 fallback_scalar=_safe_float64(row["variance_value"]),
+                fallback_index=int(row["factor_index"]),
             )
 
             output.append(
@@ -496,17 +500,30 @@ def _normalize_float_vector(
     expected_dim: int,
     fill_value: float,
     fallback_scalar: float,
+    fallback_index: int,
 ) -> list[float]:
     safe_fill = _safe_float64(fill_value)
     safe_fallback = _safe_float64(fallback_scalar)
+    safe_index = int(fallback_index)
 
     if expected_dim <= 0:
         return []
+    if safe_index < 0:
+        safe_index = 0
+    if safe_index >= expected_dim:
+        safe_index = expected_dim - 1
 
     if not values:
-        return [safe_fallback for _ in range(expected_dim)]
+        out = [safe_fill for _ in range(expected_dim)]
+        out[safe_index] = safe_fallback
+        return out
 
     normalized = [_safe_float64(item) for item in values]
+    if len(normalized) == 1 and expected_dim > 1:
+        out = [safe_fill for _ in range(expected_dim)]
+        out[safe_index] = normalized[0]
+        return out
+
     if len(normalized) < expected_dim:
         normalized.extend([safe_fill for _ in range(expected_dim - len(normalized))])
     elif len(normalized) > expected_dim:

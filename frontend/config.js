@@ -1,6 +1,7 @@
 const state = {
   models: [],
   symbolsByModel: {},
+  loadedDim: 0,
   loadedFactorNames: [],
 };
 
@@ -61,49 +62,10 @@ async function api(path, options = {}) {
 
 function clearFactorStatsView() {
   el.factorStatsMeta.textContent =
-    'Select model/symbol and click "Load Config" to edit the symbol-level factor JSON.';
+    'Select model/symbol and click "Load Config" to edit JSON: {"SYMBOL": {"factor_names": [...], "mean_values": [...], "variance_values": [...]}}';
   el.factorJsonEditor.value = "";
+  state.loadedDim = 0;
   state.loadedFactorNames = [];
-}
-
-function formatNumber(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return 0;
-  }
-  return Number(value);
-}
-
-function buildFactorConfigs(payload) {
-  if (!Array.isArray(payload.factor_configs)) {
-    throw new Error("response missing factor_configs array");
-  }
-
-  return payload.factor_configs.map((item, idx) => ({
-    dim: Number.isInteger(item.dim) ? item.dim : idx,
-    factor_name: String(item.factor_name || "").trim(),
-    mean_values: Array.isArray(item.mean_values)
-      ? item.mean_values.map((value) => formatNumber(value))
-      : [],
-    variance_values: Array.isArray(item.variance_values)
-      ? item.variance_values.map((value) => formatNumber(value))
-      : [],
-  }));
-}
-
-function renderFactorStats(payload) {
-  const factorConfigs = buildFactorConfigs(payload);
-  state.loadedFactorNames = factorConfigs.map((item) => String(item.factor_name || "")).filter(Boolean);
-
-  el.factorStatsMeta.textContent =
-    `model=${payload.model_name || "-"}, symbol=${payload.symbol || "-"}, dim=${payload.factor_count || factorConfigs.length}, updated=${payload.updated_at || "-"}`;
-
-  const editorDoc = {
-    model_name: payload.model_name || "",
-    symbol: payload.symbol || "",
-    group_key: payload.group_key || "",
-    factor_configs: factorConfigs,
-  };
-  el.factorJsonEditor.value = `${JSON.stringify(editorDoc, null, 2)}\n`;
 }
 
 function parseEditorJson() {
@@ -119,23 +81,16 @@ function parseEditorJson() {
     throw new Error(`invalid JSON: ${String(err.message || err)}`);
   }
 
-  if (Array.isArray(parsed)) {
-    return { factor_configs: parsed };
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error("JSON must be an object or factor_configs array");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("JSON must be an object keyed by symbol");
   }
 
   return parsed;
 }
 
-function normalizeDimArray(raw, path, expectedDim) {
+function normalizeNumericArray(raw, path) {
   if (!Array.isArray(raw)) {
     throw new Error(`${path} must be an array`);
-  }
-  if (raw.length !== expectedDim) {
-    throw new Error(`${path} must contain exactly ${expectedDim} numeric values`);
   }
 
   return raw.map((item, idx) => {
@@ -147,116 +102,159 @@ function normalizeDimArray(raw, path, expectedDim) {
   });
 }
 
-function validateFactorConfigs(configs) {
-  const dims = configs.map((item) => item.dim);
-  const duplicateDims = dims.filter((dim, idx) => dims.indexOf(dim) !== idx);
-  if (duplicateDims.length) {
-    throw new Error(`duplicated dim in JSON: ${[...new Set(duplicateDims)].join(", ")}`);
+function getSymbolEntry(payload, selectedSymbol) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("response must be object keyed by symbol");
   }
 
-  if (!state.loadedFactorNames.length) {
-    return;
+  let key = selectedSymbol;
+  if (!Object.prototype.hasOwnProperty.call(payload, key)) {
+    const upper = String(selectedSymbol || "").toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(payload, upper)) {
+      key = upper;
+    } else {
+      const keys = Object.keys(payload);
+      if (keys.length === 1) {
+        key = keys[0];
+      } else {
+        throw new Error(`response missing symbol key '${selectedSymbol}'`);
+      }
+    }
   }
 
-  if (configs.length !== state.loadedFactorNames.length) {
+  const entry = payload[key];
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    throw new Error(`symbol '${key}' config must be an object`);
+  }
+
+  const meanValues = normalizeNumericArray(entry.mean_values, `${key}.mean_values`);
+  const varianceValues = normalizeNumericArray(entry.variance_values, `${key}.variance_values`);
+  let factorNames = [];
+  if (entry.factor_names != null) {
+    if (!Array.isArray(entry.factor_names)) {
+      throw new Error(`${key}.factor_names must be an array`);
+    }
+    factorNames = entry.factor_names.map((item, idx) => {
+      const value = String(item || "").trim();
+      if (!value) {
+        throw new Error(`${key}.factor_names[${idx}] must not be empty`);
+      }
+      return value;
+    });
+  }
+
+  if (meanValues.length !== varianceValues.length) {
     throw new Error(
-      `factor_configs length mismatch: expected ${state.loadedFactorNames.length}, got ${configs.length}`
+      `${key} mean_values and variance_values length mismatch: ${meanValues.length} vs ${varianceValues.length}`
+    );
+  }
+  if (factorNames.length && factorNames.length !== meanValues.length) {
+    throw new Error(
+      `${key} factor_names length mismatch: factor_names=${factorNames.length}, dim=${meanValues.length}`
     );
   }
 
-  const expectedDims = new Set(state.loadedFactorNames.map((_, idx) => idx));
-  const actualDims = new Set(dims);
-  const missingDims = [...expectedDims].filter((dim) => !actualDims.has(dim));
-  const extraDims = [...actualDims].filter((dim) => !expectedDims.has(dim));
-  if (missingDims.length || extraDims.length) {
-    const parts = [];
-    if (missingDims.length) {
-      parts.push(`missing dims: ${missingDims.slice(0, 8).join(", ")}`);
-    }
-    if (extraDims.length) {
-      parts.push(`unknown dims: ${extraDims.slice(0, 8).join(", ")}`);
-    }
-    throw new Error(parts.join("; "));
-  }
+  return {
+    symbol: key,
+    factor_names: factorNames,
+    mean_values: meanValues,
+    variance_values: varianceValues,
+  };
+}
 
-  for (const item of configs) {
-    const expectedName = state.loadedFactorNames[item.dim];
-    if (item.factor_name !== expectedName) {
-      throw new Error(
-        `factor name mismatch at dim=${item.dim}: expected ${expectedName}, got ${item.factor_name}`
-      );
-    }
-  }
+function renderFactorStats(payload) {
+  const selectedSymbol = el.selectSymbol.value;
+  const stats = getSymbolEntry(payload, selectedSymbol);
+  state.loadedDim = stats.mean_values.length;
+  state.loadedFactorNames = stats.factor_names.length
+    ? stats.factor_names
+    : Array.from({ length: state.loadedDim }, (_, idx) => `factor_${idx}`);
+
+  el.factorStatsMeta.textContent =
+    `model=${el.selectModel.value || "-"}, symbol=${stats.symbol || "-"}, dim=${state.loadedDim}`;
+
+  const editorDoc = {
+    [stats.symbol]: {
+      factor_names: state.loadedFactorNames,
+      mean_values: stats.mean_values,
+      variance_values: stats.variance_values,
+    },
+  };
+  el.factorJsonEditor.value = `${JSON.stringify(editorDoc, null, 2)}\n`;
 }
 
 function collectFactorStatsPayload() {
+  const selectedSymbol = el.selectSymbol.value;
+  if (!selectedSymbol) {
+    throw new Error("symbol not selected");
+  }
+
   const parsed = parseEditorJson();
-  const rawConfigs = parsed.factor_configs;
-
-  if (!Array.isArray(rawConfigs)) {
-    throw new Error('JSON must include field "factor_configs" as an array');
+  if (!Object.prototype.hasOwnProperty.call(parsed, selectedSymbol)) {
+    throw new Error(`root JSON key must be selected symbol '${selectedSymbol}'`);
   }
 
-  if (!rawConfigs.length) {
-    throw new Error("factor_configs cannot be empty");
+  const stats = getSymbolEntry(parsed, selectedSymbol);
+  const expectedDim = state.loadedDim || stats.mean_values.length;
+
+  if (stats.mean_values.length !== expectedDim || stats.variance_values.length !== expectedDim) {
+    throw new Error(
+      `array length must equal dim=${expectedDim}; got mean=${stats.mean_values.length}, variance=${stats.variance_values.length}`
+    );
   }
-  const expectedDim = state.loadedFactorNames.length || rawConfigs.length;
-
-  const factorConfigs = rawConfigs.map((item, idx) => {
-    if (!item || typeof item !== "object") {
-      throw new Error(`factor_configs[${idx}] must be an object`);
+  const expectedFactorNames = state.loadedFactorNames.length
+    ? state.loadedFactorNames
+    : Array.from({ length: expectedDim }, (_, idx) => `factor_${idx}`);
+  const providedFactorNames = stats.factor_names.length
+    ? stats.factor_names
+    : expectedFactorNames;
+  if (providedFactorNames.length !== expectedDim) {
+    throw new Error(
+      `factor_names length must equal dim=${expectedDim}; got ${providedFactorNames.length}`
+    );
+  }
+  for (let idx = 0; idx < expectedDim; idx += 1) {
+    if (providedFactorNames[idx] !== expectedFactorNames[idx]) {
+      throw new Error(
+        `factor_names[${idx}] mismatch: expected '${expectedFactorNames[idx]}', got '${providedFactorNames[idx]}'`
+      );
     }
-
-    const dim = Number(item.dim);
-    if (!Number.isInteger(dim) || dim < 0 || dim >= expectedDim) {
-      throw new Error(`factor_configs[${idx}].dim must be an integer in [0, ${expectedDim - 1}]`);
-    }
-
-    const factorName = String(item.factor_name || "").trim();
-    if (!factorName) {
-      throw new Error(`factor_configs[${idx}].factor_name must not be empty`);
-    }
-
-    return {
-      dim,
-      factor_name: factorName,
-      mean_values: normalizeDimArray(item.mean_values, `factor_configs[${idx}].mean_values`, expectedDim),
-      variance_values: normalizeDimArray(
-        item.variance_values,
-        `factor_configs[${idx}].variance_values`,
-        expectedDim
-      ),
-    };
-  });
-
-  validateFactorConfigs(factorConfigs);
+  }
 
   return {
-    factor_configs: factorConfigs,
+    [selectedSymbol]: {
+      factor_names: providedFactorNames,
+      mean_values: stats.mean_values,
+      variance_values: stats.variance_values,
+    },
   };
 }
 
 function resetFactorStatsToDefault() {
-  const parsed = parseEditorJson();
-  const rawConfigs = parsed.factor_configs;
-  if (!Array.isArray(rawConfigs) || !rawConfigs.length) {
-    throw new Error('JSON must include non-empty "factor_configs" array');
+  const selectedSymbol = el.selectSymbol.value;
+  if (!selectedSymbol) {
+    throw new Error("symbol not selected");
   }
-  const expectedDim = state.loadedFactorNames.length || rawConfigs.length;
 
-  parsed.factor_configs = rawConfigs.map((item, idx) => {
-    if (!item || typeof item !== "object") {
-      throw new Error(`factor_configs[${idx}] must be an object`);
-    }
+  const parsed = parseEditorJson();
+  if (!Object.prototype.hasOwnProperty.call(parsed, selectedSymbol)) {
+    throw new Error(`root JSON key must be selected symbol '${selectedSymbol}'`);
+  }
 
-    return {
-      ...item,
-      mean_values: Array(expectedDim).fill(0.2),
-      variance_values: Array(expectedDim).fill(1.0),
-    };
-  });
-
+  const stats = getSymbolEntry(parsed, selectedSymbol);
+  const dim = state.loadedDim || stats.mean_values.length;
+  const factorNames = stats.factor_names.length
+    ? stats.factor_names
+    : state.loadedFactorNames.length
+      ? state.loadedFactorNames
+      : Array.from({ length: dim }, (_, idx) => `factor_${idx}`);
+  parsed[selectedSymbol] = {
+    factor_names: factorNames,
+    mean_values: Array(dim).fill(0.2),
+    variance_values: Array(dim).fill(1.0),
+  };
   el.factorJsonEditor.value = `${JSON.stringify(parsed, null, 2)}\n`;
+  state.loadedDim = dim;
 }
 
 function buildGroupQuery() {

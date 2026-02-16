@@ -23,7 +23,7 @@
       <section class="card explorer-card">
         <div class="row-head">
           <h2>Symbol Config Editor</h2>
-          <p class="text-muted">Edit one symbol JSON block at once. Each factor keeps two arrays.</p>
+          <p class="text-muted">Edit one symbol JSON block: top-level symbol key with two long arrays.</p>
         </div>
 
         <div class="selectors">
@@ -48,14 +48,14 @@
 
         <p id="configMessage" class="inline-note"></p>
         <p id="factorStatsMeta" class="text-muted">
-          Select model/symbol and click "Load Config" to edit the symbol-level factor JSON.
+          Select model/symbol and click "Load Config" to edit JSON keyed by symbol.
         </p>
 
         <textarea
           id="factorJsonEditor"
           class="json-editor"
           spellcheck="false"
-          placeholder="{\n  \"factor_configs\": [\n    {\n      \"dim\": 0,\n      \"factor_name\": \"example_factor\",\n      \"mean_values\": [0.2, 0.2],\n      \"variance_values\": [1.0, 1.0]\n    }\n  ]\n}"
+          placeholder="{\n  \"BTCUSDT\": {\n    \"factor_names\": [\"f1\", \"f2\", \"f3\"],\n    \"mean_values\": [0.2, 0.1, 0.3],\n    \"variance_values\": [1.0, 0.9, 1.1]\n  }\n}"
         ></textarea>
       </section>
     </main>

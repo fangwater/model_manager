@@ -98,7 +98,7 @@ Response includes:
 - `payload.model_json` (XGBoost json text, auto-converted from `*_model.pkl` when needed)
 - `payload.metadata` (time window, dim, train samples, etc.)
 - `payload.dim_factors` with `factor_name` and `kendall_tau`
-- `payload.factor_configs` (symbol+factor rows, each with dim-length `mean_values`/`variance_values`)
+- `payload.symbol_stats` (top-level symbol key with `factor_names` / `mean_values` / `variance_values`)
 
 Selection behavior:
 
@@ -137,19 +137,20 @@ All model endpoints are public; no bearer token is required.
 
 ## Factor config
 
-For each `model_name + symbol + factor(dim)`, service stores one factor-config row.
-`GET/PUT /factor-stats` uses `factor_configs` only:
+For each `model_name + symbol`, factor config is edited as JSON keyed by symbol:
 
-- `factor_configs`: array of objects (`dim`, `factor_name`, `mean_values`, `variance_values`)
+- top-level key: `symbol`
+- value: object with `factor_names`, `mean_values`, and `variance_values` arrays
 
-`factor_configs` item format:
+Request/response format:
 
 ```json
 {
-  "dim": 0,
-  "factor_name": "book_imbalance_10",
-  "mean_values": [0.2, 0.2, 0.2],
-  "variance_values": [1.0, 1.0, 1.0]
+  "BTCUSDT": {
+    "factor_names": ["f1", "f2", "f3"],
+    "mean_values": [0.2, 0.1, 0.3],
+    "variance_values": [1.0, 0.9, 1.1]
+  }
 }
 ```
 
@@ -157,7 +158,8 @@ Behavior:
 
 - config is auto-initialized right after scan/register/refresh (default `mean=0.2`, `variance=1`)
 - symbol dimension must always equal current factor count
-- in `factor_configs`, each factor must provide `mean_values` and `variance_values` arrays with length=`dim`
+- `factor_names` length must match `dim` and order must match model factors
+- `mean_values` and `variance_values` length must match `dim`
 
 ## Env vars
 
