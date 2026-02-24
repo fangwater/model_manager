@@ -46,24 +46,34 @@ async def async_main(args: argparse.Namespace) -> int:
     http_host = args.http_host or settings.http_host
     http_port = args.http_port or settings.http_port
 
+    LOG.info("initializing database...")
     db = Database(settings.db_path)
     db.initialize()
+    LOG.info("database initialized")
 
+    LOG.info("warming up model registry...")
     registry = ModelRegistry(db, converted_model_dir=settings.converted_model_dir)
     registry.warmup()
+    LOG.info("model registry ready")
 
+    LOG.info("initializing quantiles store...")
     quantiles_store = QuantilesStore(db)
+    LOG.info("warming up quantiles store...")
     quantiles_store.warmup()
+    LOG.info("quantiles store ready")
 
     watcher = None
     if settings.watch_enabled:
+        LOG.info("starting model watcher...")
         watcher = ModelWatcher(
             registry=registry,
             interval_seconds=settings.watch_interval_seconds,
             debounce_seconds=settings.watch_debounce_seconds,
         )
         await watcher.start()
+        LOG.info("model watcher started")
 
+    LOG.info("creating FastAPI app...")
     app = create_app(settings=settings, registry=registry, quantiles_store=quantiles_store)
 
     config = uvicorn.Config(app=app, host=http_host, port=http_port, log_level="info")
