@@ -20,6 +20,14 @@ class RegisteredModel:
     updated_at: str
 
 
+@dataclass
+class VenueQuantilesRow:
+    venue: str
+    pkl_path: str
+    created_at: str
+    updated_at: str
+
+
 class Database:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -41,6 +49,14 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     model_name TEXT NOT NULL UNIQUE,
                     root_path TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS venue_quantiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    venue TEXT NOT NULL UNIQUE,
+                    pkl_path TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -142,3 +158,54 @@ class Database:
 
     def as_dicts(self) -> list[dict[str, Any]]:
         return [item.__dict__.copy() for item in self.list_models()]
+
+    def upsert_venue_quantiles(self, venue: str, pkl_path: str) -> None:
+        now = utc_now_iso()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO venue_quantiles(venue, pkl_path, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(venue) DO UPDATE SET
+                    pkl_path = excluded.pkl_path,
+                    updated_at = excluded.updated_at
+                """,
+                (venue, pkl_path, now, now),
+            )
+            conn.commit()
+
+    def get_venue_quantiles(self, venue: str) -> VenueQuantilesRow | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT venue, pkl_path, created_at, updated_at FROM venue_quantiles WHERE venue = ?",
+                (venue,),
+            ).fetchone()
+            if row is None:
+                return None
+            return VenueQuantilesRow(
+                venue=str(row["venue"]),
+                pkl_path=str(row["pkl_path"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+
+    def list_venue_quantiles(self) -> list[VenueQuantilesRow]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT venue, pkl_path, created_at, updated_at FROM venue_quantiles ORDER BY venue ASC"
+            ).fetchall()
+        return [
+            VenueQuantilesRow(
+                venue=str(row["venue"]),
+                pkl_path=str(row["pkl_path"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+            for row in rows
+        ]
+
+    def delete_venue_quantiles(self, venue: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute("DELETE FROM venue_quantiles WHERE venue = ?", (venue,))
+            conn.commit()
+            return cursor.rowcount > 0
