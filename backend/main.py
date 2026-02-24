@@ -8,6 +8,7 @@ import uvicorn
 
 from .config import load_settings
 from .db import Database
+from .quantiles import QuantilesStore
 from .registry import ModelRegistry
 from .watcher import ModelWatcher
 from .web import create_app
@@ -51,6 +52,9 @@ async def async_main(args: argparse.Namespace) -> int:
     registry = ModelRegistry(db, converted_model_dir=settings.converted_model_dir)
     registry.warmup()
 
+    quantiles_store = QuantilesStore(db)
+    quantiles_store.warmup()
+
     watcher = None
     if settings.watch_enabled:
         watcher = ModelWatcher(
@@ -60,7 +64,7 @@ async def async_main(args: argparse.Namespace) -> int:
         )
         await watcher.start()
 
-    app = create_app(settings=settings, registry=registry)
+    app = create_app(settings=settings, registry=registry, quantiles_store=quantiles_store)
 
     config = uvicorn.Config(app=app, host=http_host, port=http_port, log_level="info")
     server = uvicorn.Server(config)
