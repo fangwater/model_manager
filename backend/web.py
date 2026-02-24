@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import Settings
+from .quantiles import InvalidVenue, QuantilesStore, SymbolNotFound as QSymbolNotFound, VenueNotFound
 from .registry import ModelNotFound, ModelRegistry, ModelRegistryError, SymbolNotFound
 
 
@@ -15,7 +16,11 @@ class AddModelRequest(BaseModel):
     root_path: str = Field(min_length=1, max_length=2048)
 
 
-def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
+class VenueQuantilesRequest(BaseModel):
+    pkl_path: str = Field(min_length=1, max_length=2048)
+
+
+def create_app(settings: Settings, registry: ModelRegistry, quantiles_store: QuantilesStore) -> FastAPI:
     app = FastAPI(title="Model Manager", version="0.1.0")
     app.add_middleware(GZipMiddleware, minimum_size=1024)
 
@@ -157,5 +162,41 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
                 "dim_factors": payload["dim_factors"],
             },
         }
+
+    # ── Venue Quantiles ──────────────────────────────────────────
+
+    @app.get("/api/venues")
+    async def list_venues() -> dict[str, object]:
+        return {"items": quantiles_store.list_venues()}
+
+    @app.put("/api/venues/{venue}/quantiles")
+    async def put_venue_quantiles(venue: str, payload: VenueQuantilesRequest) -> dict[str, object]:
+        try:
+            count = quantiles_store.load_venue(venue, payload.pkl_path)
+        except InvalidVenue as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        return {"venue": venue, "symbol_count": count}
+
+    @app.get("/api/venues/{venue}/quantiles")
+    async def get_venue_all_quantiles(venue: str) -> dict[str, object]:
+        try:
+            data = quantiles_store.get_all(venue)
+        except VenueNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return {"venue": venue, "symbols": data}
+
+    @app.get("/api/venues/{venue}/quantiles/{symbol}")
+    async def get_venue_symbol_quantiles(venue: str, symbol: str) -> dict[str, object]:
+        try:
+            values = quantiles_store.get(venue, symbol)
+        except VenueNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except QSymbolNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return {"venue": venue, "symbol": symbol, **values}
 
     return app

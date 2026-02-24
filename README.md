@@ -6,7 +6,7 @@ Python service for:
 - exploring symbol/factor/IC/info via web UI
 - serving XGBoost model json + metadata through HTTP
 - auto-refreshing registered models when artifact files change
-- maintaining per-model per-symbol factor normalization config (`mean[]` / `variance[]`)
+- per-venue order quantiles (low/high thresholds) via pkl files
 
 ## Artifact layout
 
@@ -81,7 +81,6 @@ Default ports:
 Open UI:
 
 - `http://127.0.0.1:6300`
-- config page: `http://127.0.0.1:6300/config`
 
 ## Auth
 
@@ -118,6 +117,10 @@ Compression:
 - `GET /api/models/{model_name}/factors`
 - `GET /api/models/{model_name}/symbols/{symbol}?group_key=...`
 - `GET /api/models/{model_name}/model/{symbol}`
+- `GET /api/venues`
+- `PUT /api/venues/{venue}/quantiles`
+- `GET /api/venues/{venue}/quantiles`
+- `GET /api/venues/{venue}/quantiles/{symbol}`
 
 `POST /api/models` and refresh require unique `symbol` per registered root path.
 If one symbol maps to multiple groups, request fails with `400`.
@@ -132,31 +135,63 @@ All model endpoints are public; no bearer token is required.
 - `factor_count`
 - `factors` (deduplicated list)
 
-## Factor config
+## Order Quantiles API
 
-For each `model_name + symbol`, factor config is edited as JSON keyed by symbol:
+Per-venue 阈值配置，每个 venue 对应一份 pkl 文件，pkl 内按 symbol 存储 `medium_notional_threshold` 和 `large_notional_threshold`。
 
-- top-level key: `symbol`
-- value: object with `factor_names`, `mean_values`, and `variance_values` arrays
+pkl 数据格式（list of dicts）：
 
-Request/response format:
+```json
+[
+  {"symbol": "BTCUSDT", "medium_notional_threshold": 10000.0, "large_notional_threshold": 50000.0},
+  {"symbol": "ETHUSDT", "medium_notional_threshold": 5000.0, "large_notional_threshold": 20000.0}
+]
+```
+
+合法 venue 列表：`binance-margin`, `binance-futures`, `okex-margin`, `okex-futures`, `bybit-margin`, `bybit-futures`, `bitget-margin`, `bitget-futures`, `gate-margin`, `gate-futures`
+
+### 注册/更新 venue 的 pkl 路径
+
+```
+PUT /api/venues/{venue}/quantiles
+Body: {"pkl_path": "/path/to/order_quantiles.pkl"}
+```
+
+返回：`{"venue": "binance-futures", "symbol_count": 42}`
+
+### 查询指定 venue 的所有阈值
+
+```
+GET /api/venues/{venue}/quantiles
+```
+
+返回：
 
 ```json
 {
-  "BTCUSDT": {
-    "factor_names": ["f1", "f2", "f3"],
-    "mean_values": [0.2, 0.1, 0.3],
-    "variance_values": [1.0, 0.9, 1.1]
+  "venue": "binance-futures",
+  "symbols": {
+    "BTCUSDT": {"medium_notional_threshold": 10000.0, "large_notional_threshold": 50000.0},
+    "ETHUSDT": {"medium_notional_threshold": 5000.0, "large_notional_threshold": 20000.0}
   }
 }
 ```
 
-Behavior:
+### 查询指定 venue+symbol 的阈值
 
-- config is auto-initialized right after scan/register/refresh (default `mean=0.2`, `variance=1`)
-- symbol dimension must always equal current factor count
-- `factor_names` length must match `dim` and order must match model factors
-- `mean_values` and `variance_values` length must match `dim`
+```
+GET /api/venues/{venue}/quantiles/{symbol}
+```
+
+返回：`{"venue": "binance-futures", "symbol": "BTCUSDT", "medium_notional_threshold": 10000.0, "large_notional_threshold": 50000.0}`
+
+### 列出所有已注册 venue
+
+```
+GET /api/venues
+```
+
+返回：`{"items": [{"venue": "binance-futures", "pkl_path": "/path/to/file.pkl", "updated_at": "..."}]}`
 
 ## Env vars
 
