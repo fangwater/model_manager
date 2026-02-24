@@ -98,7 +98,6 @@ Response includes:
 - `payload.model_json` (XGBoost json text, auto-converted from `*_model.pkl` when needed)
 - `payload.metadata` (time window, dim, train samples, etc.)
 - `payload.dim_factors` with `factor_name` and `kendall_tau`
-- `payload.symbol_stats` (top-level symbol key with `factor_names` / `mean_values` / `variance_values`)
 
 Selection behavior:
 
@@ -118,8 +117,6 @@ Compression:
 - `GET /api/models/{model_name}/symbols`
 - `GET /api/models/{model_name}/factors`
 - `GET /api/models/{model_name}/symbols/{symbol}?group_key=...`
-- `GET /api/models/{model_name}/symbols/{symbol}/factor-stats?group_key=...`
-- `PUT /api/models/{model_name}/symbols/{symbol}/factor-stats?group_key=...`
 - `GET /api/models/{model_name}/model/{symbol}`
 
 `POST /api/models` and refresh require unique `symbol` per registered root path.

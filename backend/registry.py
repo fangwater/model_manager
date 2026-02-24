@@ -52,7 +52,6 @@ class ModelRegistry:
         try:
             snapshot = scan_model_root(row.model_name, row.root_path)
             self._assert_unique_symbols(snapshot)
-            self._sync_snapshot_factor_stats(snapshot)
         except Exception as exc:
             if raise_on_error:
                 raise ModelRegistryError(str(exc)) from exc
@@ -82,7 +81,6 @@ class ModelRegistry:
         snapshot = scan_model_root(name, path)
         self._assert_unique_symbols(snapshot)
         self.db.upsert_model(name, snapshot.root_path)
-        self._sync_snapshot_factor_stats(snapshot)
 
         with self._lock:
             self._cache[name] = snapshot
@@ -96,7 +94,6 @@ class ModelRegistry:
         snapshot = scan_model_root(row.model_name, row.root_path)
         self._assert_unique_symbols(snapshot)
         self.db.upsert_model(row.model_name, row.root_path)
-        self._sync_snapshot_factor_stats(snapshot)
         with self._lock:
             self._cache[row.model_name] = snapshot
         return snapshot
@@ -133,86 +130,9 @@ class ModelRegistry:
 
         snapshot = scan_model_root(row.model_name, row.root_path)
         self._assert_unique_symbols(snapshot)
-        self._sync_snapshot_factor_stats(snapshot)
         with self._lock:
             self._cache[row.model_name] = snapshot
         return snapshot
-
-    def get_symbol_factor_stats(
-        self,
-        model_name: str,
-        symbol: str,
-        group_key: str | None = None,
-    ) -> dict[str, Any]:
-        snapshot = self.get_model_snapshot(model_name)
-        chosen = self._select_record(snapshot, symbol, group_key)
-        factor_stats = self._get_or_init_factor_stats_for_record(snapshot, chosen)
-
-        return {
-            chosen.symbol: {
-                "factor_names": factor_stats["factor_names"],
-                "mean_values": factor_stats["mean_values"],
-                "variance_values": factor_stats["variance_values"],
-            }
-        }
-
-    def set_symbol_factor_stats(
-        self,
-        model_name: str,
-        symbol: str,
-        mean_values: list[float],
-        variance_values: list[float],
-        factor_names: list[str] | None = None,
-        group_key: str | None = None,
-    ) -> dict[str, Any]:
-        snapshot = self.get_model_snapshot(model_name)
-        chosen = self._select_record(snapshot, symbol, group_key)
-        expected_factor_names = [str(item.factor_name or "") for item in chosen.dim_factors]
-        self._validate_symbol_stats_dim(chosen.feature_dim, len(expected_factor_names))
-        factor_count = len(expected_factor_names)
-
-        if factor_names is not None:
-            provided_factor_names = [str(item) for item in factor_names]
-            if len(provided_factor_names) != factor_count:
-                raise ModelRegistryError(
-                    f"factor_names length must match factor count={factor_count}, got {len(provided_factor_names)}"
-                )
-            for idx, expected_name in enumerate(expected_factor_names):
-                if provided_factor_names[idx] != expected_name:
-                    raise ModelRegistryError(
-                        f"factor_names[{idx}] mismatch: expected '{expected_name}', got '{provided_factor_names[idx]}'"
-                    )
-
-        if len(mean_values) != factor_count or len(variance_values) != factor_count:
-            raise ModelRegistryError(
-                f"mean_values and variance_values must match factor count={factor_count}"
-            )
-
-        try:
-            normalized_mean_values = [float(item) for item in mean_values]
-            normalized_variance_values = [float(item) for item in variance_values]
-        except (TypeError, ValueError) as exc:
-            raise ModelRegistryError("mean_values/variance_values must be numeric arrays") from exc
-
-        factor_mean_values = [list(normalized_mean_values) for _ in expected_factor_names]
-        factor_variance_values = [list(normalized_variance_values) for _ in expected_factor_names]
-
-        try:
-            self.db.replace_symbol_factor_stats(
-                model_name=snapshot.model_name,
-                symbol=chosen.symbol,
-                factor_names=expected_factor_names,
-                factor_mean_values=factor_mean_values,
-                factor_variance_values=factor_variance_values,
-            )
-        except ValueError as exc:
-            raise ModelRegistryError(str(exc)) from exc
-
-        return self.get_symbol_factor_stats(
-            model_name=snapshot.model_name,
-            symbol=chosen.symbol,
-            group_key=chosen.group_key,
-        )
 
     def list_symbols(self, model_name: str) -> list[dict[str, Any]]:
         snapshot = self.get_model_snapshot(model_name)
@@ -288,14 +208,13 @@ class ModelRegistry:
             "warnings": list(chosen.warnings),
         }
 
-    def build_model_payload(
-        self,
-        model_name: str,
-        symbol: str,
-    ) -> dict[str, Any]:
+    def build_model_payload(self, model_name: str, symbol: str) -> dict[str, Any]:
         snapshot = self.get_model_snapshot(model_name)
         record = self._select_unique_record(snapshot, symbol)
-        if not record.grpc_ready:
+
+        if not record.feature_dim or not (
+            record.artifacts.get("model_json") or record.artifacts.get("model_pkl")
+        ):
             raise SymbolNotFound(
                 f"symbol '{symbol}' in model '{model_name}' is not payload-ready "
                 "(missing model json/model pkl or dim)"
@@ -303,7 +222,6 @@ class ModelRegistry:
 
         model_json_path = self._resolve_model_json_path(snapshot, record)
         model_json_text = load_model_json_text(model_json_path)
-        factor_stats = self._get_or_init_factor_stats_for_record(snapshot, record)
 
         return {
             "model_name": snapshot.model_name,
@@ -321,15 +239,47 @@ class ModelRegistry:
             "model_json": model_json_text,
             "model_json_path": model_json_path,
             "dim_factors": [asdict(item) for item in record.dim_factors],
-            "symbol_stats": {
-                record.symbol: {
-                    "factor_names": factor_stats["factor_names"],
-                    "mean_values": factor_stats["mean_values"],
-                    "variance_values": factor_stats["variance_values"],
-                }
-            },
-            "factor_stats_updated_at": factor_stats["updated_at"],
         }
+
+    def _select_record(
+        self,
+        snapshot: ModelSnapshot,
+        symbol: str,
+        group_key: str | None,
+    ) -> SymbolRecord:
+        normalized_symbol = symbol.strip().upper()
+        if not normalized_symbol:
+            raise SymbolNotFound("symbol must not be empty")
+
+        candidates = [
+            record
+            for record in snapshot.symbols
+            if record.symbol.strip().upper() == normalized_symbol
+        ]
+        if not candidates:
+            raise SymbolNotFound(
+                f"symbol '{normalized_symbol}' not found in model '{snapshot.model_name}'"
+            )
+
+        if group_key:
+            wanted = group_key.strip()
+            for record in candidates:
+                if record.group_key == wanted:
+                    return record
+            raise SymbolNotFound(
+                f"group_key '{group_key}' not found for symbol '{normalized_symbol}'"
+            )
+
+        # 默认优先：payload可用 + train_end_date较新 + group_key字典序
+        candidates.sort(
+            key=lambda item: (
+                int(item.grpc_ready),
+                item.train_end_date or "",
+                item.group_key,
+            ),
+            reverse=True,
+        )
+        return candidates[0]
 
     def _select_unique_record(self, snapshot: ModelSnapshot, symbol: str) -> SymbolRecord:
         normalized_symbol = symbol.strip().upper()
@@ -411,116 +361,3 @@ class ModelRegistry:
         digest = hashlib.sha1(str(model_pkl_path).encode("utf-8")).hexdigest()[:12]
         file_name = f"{_safe_file_token(group_key)}.{digest}.model.json"
         return model_dir / file_name
-
-    def _select_record(
-        self,
-        snapshot: ModelSnapshot,
-        symbol: str,
-        group_key: str | None,
-    ) -> SymbolRecord:
-        normalized_symbol = symbol.strip().upper()
-        if not normalized_symbol:
-            raise SymbolNotFound("symbol must not be empty")
-
-        candidates = [
-            record
-            for record in snapshot.symbols
-            if record.symbol.strip().upper() == normalized_symbol
-        ]
-        if not candidates:
-            raise SymbolNotFound(
-                f"symbol '{normalized_symbol}' not found in model '{snapshot.model_name}'"
-            )
-
-        if group_key:
-            wanted = group_key.strip()
-            for record in candidates:
-                if record.group_key == wanted:
-                    return record
-            raise SymbolNotFound(
-                f"group_key '{group_key}' not found for symbol '{normalized_symbol}'"
-            )
-
-        # 默认优先：payload可用 + train_end_date较新 + group_key字典序
-        candidates.sort(
-            key=lambda item: (
-                int(item.grpc_ready),
-                item.train_end_date or "",
-                item.group_key,
-            ),
-            reverse=True,
-        )
-        return candidates[0]
-
-    def _sync_snapshot_factor_stats(self, snapshot: ModelSnapshot) -> None:
-        for record in snapshot.symbols:
-            factor_names = [str(item.factor_name or "") for item in record.dim_factors]
-            self._validate_symbol_stats_dim(record.feature_dim, len(factor_names))
-            self.db.sync_symbol_factor_stats(
-                model_name=snapshot.model_name,
-                symbol=record.symbol,
-                factor_names=factor_names,
-            )
-
-    def _validate_symbol_stats_dim(self, feature_dim: int, factor_count: int) -> None:
-        if int(feature_dim) != int(factor_count):
-            raise ModelRegistryError(
-                f"dimension mismatch: feature_dim={feature_dim}, factor_count={factor_count}"
-            )
-
-    def _get_or_init_factor_stats_for_record(
-        self,
-        snapshot: ModelSnapshot,
-        record: SymbolRecord,
-    ) -> dict[str, Any]:
-        factor_names = [str(item.factor_name or "") for item in record.dim_factors]
-        self._validate_symbol_stats_dim(record.feature_dim, len(factor_names))
-
-        self.db.sync_symbol_factor_stats(
-            model_name=snapshot.model_name,
-            symbol=record.symbol,
-            factor_names=factor_names,
-        )
-        rows = self.db.get_symbol_factor_stats(snapshot.model_name, record.symbol)
-        if len(rows) != record.feature_dim:
-            raise ModelRegistryError(
-                f"factor stats row count mismatch: expected dim={record.feature_dim}, got {len(rows)}"
-            )
-
-        means: list[float] = []
-        variances: list[float] = []
-        latest_updated_at = snapshot.scanned_at
-        expected_dim = record.feature_dim
-        rows_by_index = sorted(rows, key=lambda item: int(item.factor_index))
-        for row in rows:
-            if len(row.mean_values) != expected_dim or len(row.variance_values) != expected_dim:
-                raise ModelRegistryError(
-                    f"factor '{row.factor_name}' vector length mismatch: "
-                    f"mean_values={len(row.mean_values)}, variance_values={len(row.variance_values)}, "
-                    f"expected={expected_dim}"
-                )
-
-            dim = int(row.factor_index)
-            if dim < 0 or dim >= expected_dim:
-                raise ModelRegistryError(
-                    f"factor index out of range for '{row.factor_name}': index={dim}, expected 0..{expected_dim - 1}"
-                )
-
-            if row.updated_at > latest_updated_at:
-                latest_updated_at = row.updated_at
-
-        for expected_index, row in enumerate(rows_by_index):
-            if int(row.factor_index) != expected_index:
-                raise ModelRegistryError(
-                    f"factor index mismatch: expected index={expected_index}, got {row.factor_index}"
-                )
-            means.append(float(row.mean_values[expected_index]))
-            variances.append(float(row.variance_values[expected_index]))
-
-        return {
-            "factor_count": len(factor_names),
-            "factor_names": list(factor_names),
-            "mean_values": means,
-            "variance_values": variances,
-            "updated_at": latest_updated_at,
-        }

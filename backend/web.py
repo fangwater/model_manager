@@ -32,11 +32,6 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
         index_file = frontend_dir / "index.html"
         return FileResponse(index_file)
 
-    @app.get("/config")
-    async def config_page() -> FileResponse:
-        config_file = frontend_dir / "config.html"
-        return FileResponse(config_file)
-
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
         favicon_file = frontend_dir / "favicon.ico"
@@ -128,87 +123,6 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         return detail
 
-    @app.get("/api/models/{model_name}/symbols/{symbol}/factor-stats")
-    async def get_symbol_factor_stats(
-        model_name: str,
-        symbol: str,
-        request: Request,
-    ) -> dict[str, object]:
-        group_key = request.query_params.get("group_key")
-        try:
-            data = registry.get_symbol_factor_stats(model_name, symbol, group_key=group_key)
-        except ModelNotFound as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-        except SymbolNotFound as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-        except ModelRegistryError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        return data
-
-    @app.put("/api/models/{model_name}/symbols/{symbol}/factor-stats")
-    async def update_symbol_factor_stats(
-        model_name: str,
-        symbol: str,
-        request: Request,
-    ) -> dict[str, object]:
-        group_key = request.query_params.get("group_key")
-        try:
-            raw_payload = await request.json()
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="request body must be valid JSON",
-            ) from exc
-
-        if not isinstance(raw_payload, dict):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="request body must be an object with symbol key",
-            )
-
-        symbol_entry = raw_payload.get(symbol)
-        if symbol_entry is None:
-            symbol_entry = raw_payload.get(symbol.strip().upper())
-        if symbol_entry is None and len(raw_payload) == 1:
-            symbol_entry = next(iter(raw_payload.values()))
-
-        if not isinstance(symbol_entry, dict):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"request body must include symbol key '{symbol}' with object value",
-            )
-
-        mean_values = symbol_entry.get("mean_values")
-        variance_values = symbol_entry.get("variance_values")
-        if not isinstance(mean_values, list) or not isinstance(variance_values, list):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="symbol config must include mean_values and variance_values arrays",
-            )
-        factor_names = symbol_entry.get("factor_names")
-        if factor_names is not None and not isinstance(factor_names, list):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="factor_names must be an array when provided",
-            )
-
-        try:
-            data = registry.set_symbol_factor_stats(
-                model_name=model_name,
-                symbol=symbol,
-                mean_values=list(mean_values),
-                variance_values=list(variance_values),
-                factor_names=list(factor_names) if factor_names is not None else None,
-                group_key=group_key,
-            )
-        except ModelNotFound as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-        except SymbolNotFound as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-        except ModelRegistryError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        return data
-
     @app.get("/api/models/{model_name}/model/{symbol}")
     async def get_model_payload(
         model_name: str,
@@ -239,10 +153,8 @@ def create_app(settings: Settings, registry: ModelRegistry) -> FastAPI:
                     "model_json_path": payload["model_json_path"],
                     "source_root_path": payload["root_path"],
                     "scanned_at": payload["scanned_at"],
-                    "factor_stats_updated_at": payload["factor_stats_updated_at"],
                 },
                 "dim_factors": payload["dim_factors"],
-                "symbol_stats": payload["symbol_stats"],
             },
         }
 

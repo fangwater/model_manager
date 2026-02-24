@@ -260,12 +260,6 @@ button:active {
   gap: 10px;
 }
 
-.row-actions {
-  display: inline-flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .model-cards {
   margin-top: 10px;
   display: grid;
@@ -375,26 +369,6 @@ td {
 
 th {
   color: var(--ink-1);
-}
-
-.factor-input {
-  width: 140px;
-  max-width: 100%;
-}
-
-.json-editor {
-  margin-top: 8px;
-  width: 100%;
-  min-height: 480px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  font-size: 0.82rem;
-  font-family: "JetBrains Mono", "Consolas", "SFMono-Regular", monospace;
-  line-height: 1.5;
-  color: var(--ink-1);
-  background: rgba(248, 251, 253, 0.95);
-  resize: vertical;
 }
 
 tbody tr:nth-child(even) {
