@@ -1,9 +1,25 @@
 const state = {
   models: [],
   symbolsByModel: {},
+  venues: [],
   permission: "public",
   autoRefreshHandle: null,
 };
+
+const VALID_VENUES = [
+  "binance-margin",
+  "binance-futures",
+  "okex-margin",
+  "okex-futures",
+  "bybit-margin",
+  "bybit-futures",
+  "bitget-margin",
+  "bitget-futures",
+  "gate-margin",
+  "gate-futures",
+];
+
+const MAX_QUANTILES_ROWS = 500;
 
 const el = {
   dashboard: document.getElementById("dashboard"),
@@ -30,6 +46,14 @@ const el = {
   detailMeta: document.getElementById("detailMeta"),
   factorTableBody: document.querySelector("#factorTable tbody"),
   icTableBody: document.querySelector("#icTable tbody"),
+  quantilesForm: document.getElementById("quantilesForm"),
+  quantilesVenue: document.getElementById("quantilesVenue"),
+  quantilesPath: document.getElementById("quantilesPath"),
+  quantilesSubmitBtn: document.getElementById("quantilesSubmitBtn"),
+  quantilesRefreshBtn: document.getElementById("quantilesRefreshBtn"),
+  quantilesMessage: document.getElementById("quantilesMessage"),
+  quantilesMeta: document.getElementById("quantilesMeta"),
+  quantilesTableBody: document.querySelector("#quantilesTable tbody"),
 };
 
 function setPermission(permission) {
@@ -61,6 +85,23 @@ function setAddModelBusy(busy) {
   }
   el.addModelSubmitBtn.disabled = busy;
   el.addModelSubmitBtn.textContent = busy ? "Scanning..." : "Scan and Register";
+}
+
+function showQuantilesMessage(message, isError = false) {
+  if (!el.quantilesMessage) {
+    return;
+  }
+  el.quantilesMessage.textContent = message || "";
+  el.quantilesMessage.style.color = isError ? "#be4f22" : "#1f6a90";
+}
+
+function setQuantilesBusy(busy) {
+  if (!el.quantilesSubmitBtn || !el.quantilesRefreshBtn) {
+    return;
+  }
+  el.quantilesSubmitBtn.disabled = busy;
+  el.quantilesRefreshBtn.disabled = busy;
+  el.quantilesSubmitBtn.textContent = busy ? "Initializing..." : "Load PKL and Initialize";
 }
 
 async function api(path, options = {}) {
@@ -228,6 +269,137 @@ function clearDetailView() {
   el.detailMeta.innerHTML = "";
   el.factorTableBody.innerHTML = "";
   el.icTableBody.innerHTML = "";
+}
+
+function clearQuantilesView(message) {
+  el.quantilesMeta.textContent = message || "No thresholds loaded for selected venue.";
+  el.quantilesTableBody.innerHTML = `
+    <tr>
+      <td colspan="3">No thresholds loaded.</td>
+    </tr>
+  `;
+}
+
+function getVenueRow(venue) {
+  return state.venues.find((item) => item.venue === venue) || null;
+}
+
+function renderVenueOptions() {
+  const current = el.quantilesVenue.value;
+  const loaded = new Set(state.venues.map((item) => item.venue));
+  el.quantilesVenue.innerHTML = VALID_VENUES
+    .map((venue) => {
+      const label = loaded.has(venue) ? `${venue} (loaded)` : venue;
+      return `<option value="${escapeHtml(venue)}">${escapeHtml(label)}</option>`;
+    })
+    .join("");
+
+  if (current && VALID_VENUES.includes(current)) {
+    el.quantilesVenue.value = current;
+  }
+
+  if (!el.quantilesVenue.value && VALID_VENUES.length) {
+    el.quantilesVenue.value = VALID_VENUES[0];
+  }
+}
+
+function syncQuantilesPathForVenue(forceUpdate) {
+  const venue = el.quantilesVenue.value;
+  const row = getVenueRow(venue);
+  if (!row || !row.pkl_path) {
+    return;
+  }
+  if (!forceUpdate && el.quantilesPath.value.trim()) {
+    return;
+  }
+  el.quantilesPath.value = row.pkl_path;
+}
+
+function renderVenueQuantiles(payload) {
+  const venue = String(payload.venue || "").trim();
+  const raw = payload.symbols && typeof payload.symbols === "object" ? payload.symbols : {};
+  const rows = Object.entries(raw).sort((a, b) => a[0].localeCompare(b[0]));
+  const shown = rows.slice(0, MAX_QUANTILES_ROWS);
+  const total = rows.length;
+
+  const suffix = total > shown.length ? `, showing=${shown.length}` : "";
+  el.quantilesMeta.textContent = `venue=${venue || "-"}, symbols=${total}${suffix}`;
+
+  if (!shown.length) {
+    clearQuantilesView(`venue=${venue || "-"}, symbols=0`);
+    return;
+  }
+
+  el.quantilesTableBody.innerHTML = shown
+    .map(([symbol, values]) => {
+      const medium = values && values.medium_notional_threshold != null
+        ? values.medium_notional_threshold
+        : "";
+      const large = values && values.large_notional_threshold != null
+        ? values.large_notional_threshold
+        : "";
+      return `
+      <tr>
+        <td>${escapeHtml(symbol)}</td>
+        <td>${escapeHtml(medium)}</td>
+        <td>${escapeHtml(large)}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function loadVenueRegistry() {
+  const payload = await api("/api/venues");
+  state.venues = Array.isArray(payload.items) ? payload.items : [];
+  renderVenueOptions();
+}
+
+async function loadSelectedVenueQuantiles() {
+  const venue = el.quantilesVenue.value;
+  if (!venue) {
+    clearQuantilesView();
+    return;
+  }
+  const row = getVenueRow(venue);
+  if (!row) {
+    clearQuantilesView(`venue=${venue}, not initialized yet`);
+    return;
+  }
+
+  const payload = await api(`/api/venues/${encodeURIComponent(venue)}/quantiles`);
+  renderVenueQuantiles(payload);
+}
+
+async function initializeVenueQuantiles() {
+  const venue = el.quantilesVenue.value.trim();
+  const pklPath = el.quantilesPath.value.trim();
+
+  if (!venue) {
+    showQuantilesMessage("Venue is required.", true);
+    return;
+  }
+  if (!pklPath) {
+    showQuantilesMessage("Quantiles PKL Path is required.", true);
+    return;
+  }
+
+  setQuantilesBusy(true);
+  showQuantilesMessage(`Loading ${venue} from ${pklPath} ...`, false);
+  try {
+    const res = await api(`/api/venues/${encodeURIComponent(venue)}/quantiles`, {
+      method: "PUT",
+      body: JSON.stringify({ pkl_path: pklPath }),
+    });
+    await loadVenueRegistry();
+    el.quantilesVenue.value = venue;
+    syncQuantilesPathForVenue(true);
+    await loadSelectedVenueQuantiles();
+    showQuantilesMessage(`Initialized ${res.venue}. symbols=${res.symbol_count}.`, false);
+  } catch (err) {
+    showQuantilesMessage(String(err.message || err), true);
+  } finally {
+    setQuantilesBusy(false);
+  }
 }
 
 function renderModelFactors(payload) {
@@ -427,8 +599,13 @@ async function bootstrap() {
     setPermission("public");
     showDashboard(true);
     await loadModels();
+    await loadVenueRegistry();
+    syncQuantilesPathForVenue(false);
+    await loadSelectedVenueQuantiles();
   } catch (err) {
-    showAddModelMessage(String(err.message || err), true);
+    const msg = String(err.message || err);
+    showAddModelMessage(msg, true);
+    showQuantilesMessage(msg, true);
   }
 }
 
@@ -517,6 +694,32 @@ el.loadModelOverviewBtn.addEventListener("click", async () => {
     await loadModelOverview();
   } catch (err) {
     showAddModelMessage(String(err.message || err), true);
+  }
+});
+
+el.quantilesForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await initializeVenueQuantiles();
+});
+
+el.quantilesRefreshBtn.addEventListener("click", async () => {
+  try {
+    await loadVenueRegistry();
+    syncQuantilesPathForVenue(false);
+    await loadSelectedVenueQuantiles();
+    showQuantilesMessage("Venue list refreshed.", false);
+  } catch (err) {
+    showQuantilesMessage(String(err.message || err), true);
+  }
+});
+
+el.quantilesVenue.addEventListener("change", async () => {
+  try {
+    syncQuantilesPathForVenue(false);
+    await loadSelectedVenueQuantiles();
+    showQuantilesMessage("");
+  } catch (err) {
+    showQuantilesMessage(String(err.message || err), true);
   }
 });
 

@@ -184,6 +184,12 @@ h3 {
   gap: 10px;
 }
 
+.action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 label {
   font-size: 0.83rem;
   color: var(--ink-1);
