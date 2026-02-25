@@ -69,6 +69,24 @@ def create_app(settings: Settings, registry: ModelRegistry, quantiles_store: Qua
             "warnings": snapshot.warnings,
         }
 
+    @app.delete("/api/models/{model_name}")
+    async def delete_model(model_name: str) -> dict[str, object]:
+        name = model_name.strip()
+        try:
+            registry.delete_model(name)
+        except ModelNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ModelRegistryError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+        return {
+            "ok": True,
+            "model_name": name,
+            "deleted": True,
+        }
+
     @app.post("/api/models/{model_name}/refresh")
     async def refresh_model(model_name: str) -> dict[str, object]:
         try:

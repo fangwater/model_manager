@@ -239,6 +239,10 @@ button:active {
   border: 1px solid var(--line);
 }
 
+.btn-danger {
+  background: linear-gradient(105deg, #af3f1a, #d15d28);
+}
+
 .inline-note {
   min-height: 1.2em;
   margin: 8px 0 0;

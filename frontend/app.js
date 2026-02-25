@@ -12,6 +12,7 @@ const el = {
   modelCount: document.getElementById("modelCount"),
   symbolCount: document.getElementById("symbolCount"),
   addModelForm: document.getElementById("addModelForm"),
+  addModelSubmitBtn: document.getElementById("addModelSubmitBtn"),
   addModelMessage: document.getElementById("addModelMessage"),
   modelsContainer: document.getElementById("modelsContainer"),
   refreshModelsBtn: document.getElementById("refreshModelsBtn"),
@@ -40,6 +41,26 @@ function setPermission(permission) {
 function showAddModelMessage(message, isError = false) {
   el.addModelMessage.textContent = message || "";
   el.addModelMessage.style.color = isError ? "#be4f22" : "#1f6a90";
+}
+
+function inferModelNameFromPath(rawPath) {
+  const normalized = String(rawPath || "").trim().replace(/[\\/]+$/, "");
+  if (!normalized) {
+    return "";
+  }
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  if (!parts.length) {
+    return "";
+  }
+  return parts[parts.length - 1];
+}
+
+function setAddModelBusy(busy) {
+  if (!el.addModelSubmitBtn) {
+    return;
+  }
+  el.addModelSubmitBtn.disabled = busy;
+  el.addModelSubmitBtn.textContent = busy ? "Scanning..." : "Scan and Register";
 }
 
 async function api(path, options = {}) {
@@ -76,11 +97,9 @@ function showDashboard(visible) {
     startAutoRefresh();
   } else {
     el.modelsContainer.innerHTML = "";
-    el.detailMeta.innerHTML = "";
+    clearDetailView();
     clearModelFactorsView();
     clearModelOverviewView();
-    el.factorTableBody.innerHTML = "";
-    el.icTableBody.innerHTML = "";
     stopAutoRefresh();
   }
 }
@@ -135,6 +154,7 @@ function renderModels() {
       <div style="margin-top:8px; display:flex; gap:8px;">
         <button type="button" data-action="open" data-model="${encodeURIComponent(item.model_name)}">Open</button>
         <button type="button" class="btn-ghost" data-action="refresh" data-model="${encodeURIComponent(item.model_name)}">Rescan</button>
+        <button type="button" class="btn-danger" data-action="delete" data-model="${encodeURIComponent(item.model_name)}">Delete</button>
       </div>
     `;
 
@@ -179,6 +199,7 @@ async function loadSymbolsForSelectedModel() {
   if (!modelName) {
     el.selectSymbol.innerHTML = "";
     el.selectGroup.innerHTML = "";
+    clearDetailView();
     clearModelFactorsView();
     clearModelOverviewView();
     return;
@@ -201,6 +222,12 @@ function clearModelOverviewView() {
   el.modelOverviewMeta.textContent = "Select a model and click \"Load Symbols + Factors\" to view all symbols and all factors.";
   el.modelSymbolsTableBody.innerHTML = "";
   el.modelAllFactorsTableBody.innerHTML = "";
+}
+
+function clearDetailView() {
+  el.detailMeta.innerHTML = "";
+  el.factorTableBody.innerHTML = "";
+  el.icTableBody.innerHTML = "";
 }
 
 function renderModelFactors(payload) {
@@ -407,9 +434,22 @@ async function bootstrap() {
 
 el.addModelForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const modelName = document.getElementById("modelName").value.trim();
+  const modelNameInput = document.getElementById("modelName");
   const rootPath = document.getElementById("modelPath").value.trim();
+  const inferredModelName = inferModelNameFromPath(rootPath);
+  const modelName = modelNameInput.value.trim() || inferredModelName;
 
+  if (!rootPath) {
+    showAddModelMessage("Model Directory Path is required.", true);
+    return;
+  }
+  if (!modelName) {
+    showAddModelMessage("Model Name is empty and cannot be inferred from path.", true);
+    return;
+  }
+
+  setAddModelBusy(true);
+  showAddModelMessage(`Scanning ${rootPath} ...`);
   try {
     const res = await api("/api/models", {
       method: "POST",
@@ -421,10 +461,14 @@ el.addModelForm.addEventListener("submit", async (event) => {
       msg += ` warnings=${res.warnings.length}`;
     }
     showAddModelMessage(msg, false);
+    modelNameInput.value = modelName;
     event.target.reset();
     await loadModels();
   } catch (err) {
+    console.error("scan/register failed:", err);
     showAddModelMessage(String(err.message || err), true);
+  } finally {
+    setAddModelBusy(false);
   }
 });
 
@@ -440,6 +484,7 @@ el.refreshModelsBtn.addEventListener("click", async () => {
 el.selectModel.addEventListener("change", async () => {
   try {
     await loadSymbolsForSelectedModel();
+    clearDetailView();
     clearModelFactorsView();
     clearModelOverviewView();
   } catch (err) {
@@ -498,6 +543,23 @@ el.modelsContainer.addEventListener("click", async (event) => {
       await api(`/api/models/${encodeURIComponent(model)}/refresh`, { method: "POST" });
       await loadModels();
       showAddModelMessage(`Rescanned ${model}.`);
+      return;
+    }
+
+    if (action === "delete") {
+      const ok = window.confirm(
+        `Delete model "${model}" from registry?\nThis only removes registration; files on disk are untouched.`
+      );
+      if (!ok) {
+        return;
+      }
+
+      await api(`/api/models/${encodeURIComponent(model)}`, { method: "DELETE" });
+      delete state.symbolsByModel[model];
+      await loadModels();
+      clearDetailView();
+      showAddModelMessage(`Deleted ${model}.`);
+      return;
     }
   } catch (err) {
     showAddModelMessage(String(err.message || err), true);
@@ -505,3 +567,13 @@ el.modelsContainer.addEventListener("click", async (event) => {
 });
 
 bootstrap();
+
+window.addEventListener("error", (event) => {
+  showAddModelMessage(`Frontend error: ${event.message || "unknown"}`, true);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  const message = typeof reason === "string" ? reason : (reason && reason.message) || "unknown promise rejection";
+  showAddModelMessage(`Frontend error: ${message}`, true);
+});

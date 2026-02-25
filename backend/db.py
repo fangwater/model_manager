@@ -156,6 +156,15 @@ class Database:
             for row in rows
         ]
 
+    def delete_model(self, model_name: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM model_repo WHERE model_name = ?",
+                (model_name,),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
     def as_dicts(self) -> list[dict[str, Any]]:
         return [item.__dict__.copy() for item in self.list_models()]
 

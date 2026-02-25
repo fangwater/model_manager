@@ -39,16 +39,16 @@
         <div class="layout-grid">
           <section class="card">
             <h2>Register Model Path</h2>
-            <form id="addModelForm" class="form-grid">
+            <form id="addModelForm" class="form-grid" novalidate>
               <label>
                 Model Name
-                <input id="modelName" type="text" placeholder="pairmm_xgb_v1" required />
+                <input id="modelName" type="text" placeholder="pairmm_xgb_v1 (optional, inferred from path)" />
               </label>
               <label>
                 Model Directory Path
                 <input id="modelPath" type="text" placeholder="/abs/path/to/model_dir" required />
               </label>
-              <button type="submit">Scan and Register</button>
+              <button id="addModelSubmitBtn" type="submit">Scan and Register</button>
             </form>
             <p id="addModelMessage" class="inline-note"></p>
           </section>

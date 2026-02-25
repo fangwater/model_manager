@@ -65,6 +65,35 @@ cd /home/fanghaizhou/project/model_manager
 ./stop.sh
 ```
 
+### 4) Clear All Historical Runtime Data
+
+This is a full cleanup for restart preparation. It removes all runtime history under `data/`:
+
+- registered models in sqlite
+- venue quantiles registrations in sqlite
+- converted model cache files
+
+Recommended sequence:
+
+```bash
+./stop.sh
+./cleanup_history.sh
+./start.sh
+```
+
+Run in foreground:
+
+```bash
+cd /home/fanghaizhou/project/model_manager
+./cleanup_history.sh
+```
+
+Run in background (non-blocking):
+
+```bash
+./cleanup_history.sh --background
+```
+
 ## Run (direct, optional)
 
 `start_model_manager.sh` is pinned to `.venv/bin/python`.
@@ -112,6 +141,7 @@ Compression:
 
 - `GET /api/models`
 - `POST /api/models`
+- `DELETE /api/models/{model_name}`
 - `POST /api/models/{model_name}/refresh`
 - `GET /api/models/{model_name}/symbols`
 - `GET /api/models/{model_name}/factors`
@@ -124,6 +154,8 @@ Compression:
 
 `POST /api/models` and refresh require unique `symbol` per registered root path.
 If one symbol maps to multiple groups, request fails with `400`.
+
+`DELETE /api/models/{model_name}` only removes registry metadata/cache; model files on disk are not deleted.
 
 All model endpoints are public; no bearer token is required.
 

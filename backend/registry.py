@@ -98,6 +98,18 @@ class ModelRegistry:
             self._cache[row.model_name] = snapshot
         return snapshot
 
+    def delete_model(self, model_name: str) -> None:
+        name = model_name.strip()
+        if not name:
+            raise ModelRegistryError("model_name must not be empty")
+
+        deleted = self.db.delete_model(name)
+        if not deleted:
+            raise ModelNotFound(f"model not found: {name}")
+
+        with self._lock:
+            self._cache.pop(name, None)
+
     def list_models(self) -> list[dict[str, Any]]:
         rows = self.db.list_models()
         output: list[dict[str, Any]] = []
