@@ -169,16 +169,19 @@ All model endpoints are public; no bearer token is required.
 
 ## Order Quantiles API
 
-Per-venue 阈值配置，每个 venue 对应一份 pkl 文件，pkl 内按 symbol 存储 `medium_notional_threshold` 和 `large_notional_threshold`。
+Per-venue 阈值配置，每个 venue 对应一份 pkl 文件，pkl 内按 symbol 存储 `low` 和 `high`。
 
-pkl 数据格式（list of dicts）：
+pkl 数据格式（dict）：
 
 ```json
-[
-  {"symbol": "BTCUSDT", "medium_notional_threshold": 10000.0, "large_notional_threshold": 50000.0},
-  {"symbol": "ETHUSDT", "medium_notional_threshold": 5000.0, "large_notional_threshold": 20000.0}
-]
+{
+  "BTCUSDT": {"low": 10000.0, "high": 50000.0},
+  "ETHUSDT": {"low": 5000.0, "high": 20000.0}
+}
 ```
+
+服务内部会将 `low/high` 统一映射并存储为
+`medium_notional_threshold/large_notional_threshold`（包括 Redis 写入与查询返回）。
 
 合法 venue 列表：`binance-margin`, `binance-futures`, `okex-margin`, `okex-futures`, `bybit-margin`, `bybit-futures`, `bitget-margin`, `bitget-futures`, `gate-margin`, `gate-futures`
 

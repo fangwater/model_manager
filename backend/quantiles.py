@@ -45,21 +45,47 @@ def _load_pkl(pkl_path: Path) -> dict[str, dict[str, float]]:
 
     result: dict[str, dict[str, float]] = {}
 
-    if isinstance(raw, list):
-        # list of dicts: [{"symbol": "BTCUSDT", "medium_notional_threshold": ..., "large_notional_threshold": ...}, ...]
-        for item in raw:
-            symbol = str(item["symbol"])
-            result[symbol] = {
-                "medium_notional_threshold": float(item["medium_notional_threshold"]),
-                "large_notional_threshold": float(item["large_notional_threshold"]),
+    def _normalize_values(values: Any, symbol: str) -> dict[str, float]:
+        if not isinstance(values, dict):
+            raise ValueError(f"invalid quantiles row for symbol '{symbol}': expected dict")
+
+        if "low" in values and "high" in values:
+            # Canonical pkl format: {"low": ..., "high": ...}
+            return {
+                "medium_notional_threshold": float(values["low"]),
+                "large_notional_threshold": float(values["high"]),
             }
-    elif isinstance(raw, dict):
-        # dict keyed by symbol: {"BTCUSDT": {"medium_notional_threshold": ..., "large_notional_threshold": ...}, ...}
-        for symbol, values in raw.items():
-            result[str(symbol)] = {
+
+        if (
+            "medium_notional_threshold" in values
+            and "large_notional_threshold" in values
+        ):
+            # Keep compatibility with the old/exported notional-key format.
+            return {
                 "medium_notional_threshold": float(values["medium_notional_threshold"]),
                 "large_notional_threshold": float(values["large_notional_threshold"]),
             }
+
+        keys = ", ".join(sorted(str(k) for k in values.keys()))
+        raise ValueError(
+            f"invalid quantiles keys for symbol '{symbol}': {keys}; "
+            "expected {medium_notional_threshold, large_notional_threshold} or {low, high}"
+        )
+
+    if isinstance(raw, list):
+        # list of dicts: [{"symbol": "BTCUSDT", "medium_notional_threshold": ..., "large_notional_threshold": ...}, ...]
+        for idx, item in enumerate(raw):
+            if not isinstance(item, dict):
+                raise ValueError(f"invalid quantiles row at index {idx}: expected dict")
+            if "symbol" not in item:
+                raise ValueError(f"invalid quantiles row at index {idx}: missing symbol")
+            symbol = str(item["symbol"])
+            result[symbol] = _normalize_values(item, symbol)
+    elif isinstance(raw, dict):
+        # dict keyed by symbol: {"BTCUSDT": {"medium_notional_threshold": ..., "large_notional_threshold": ...}, ...}
+        for symbol, values in raw.items():
+            normalized_symbol = str(symbol)
+            result[normalized_symbol] = _normalize_values(values, normalized_symbol)
     else:
         raise ValueError(f"unexpected pkl format: {type(raw)}")
 
