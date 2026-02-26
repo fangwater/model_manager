@@ -15,6 +15,7 @@ ARTIFACT_SUFFIXES: dict[str, str] = {
     "info_pkl": "_info.pkl",
     "model_pkl": "_model.pkl",
     "model_json": "_model.json",
+    "model_onnx": "_model.onnx",
 }
 
 
@@ -397,10 +398,11 @@ def scan_model_root(model_name: str, root_path: str) -> ModelSnapshot:
             if file_meta is not None:
                 artifacts[key] = file_meta
 
+        has_model_onnx = file_map.get("model_onnx") is not None and file_map["model_onnx"].exists()
         has_model_json = file_map.get("model_json") is not None and file_map["model_json"].exists()
         has_model_pkl = file_map.get("model_pkl") is not None and file_map["model_pkl"].exists()
         grpc_ready = (
-            (has_model_json or has_model_pkl)
+            (has_model_onnx or has_model_json or has_model_pkl)
             and feature_dim > 0
             and bool(symbol)
         )

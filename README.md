@@ -129,16 +129,16 @@ Response includes:
 
 Method (binary):
 
-- `GET /api/models/{model_name}/model_so/{symbol}`
+- `GET /api/models/{model_name}/model_onnx/{symbol}`
 
 Response:
 
-- body: `application/octet-stream` (`.so` bytes compiled from model json via tl2cgen)
+- body: `application/octet-stream` (`.onnx` bytes compiled from model json via onnxmltools)
 - headers:
   - `x-model-feature-dim`: feature dimension (usize)
   - `x-model-name`: model name
   - `x-model-symbol`: symbol
-  - `x-model-sha256`: sha256 of returned `.so`
+  - `x-model-sha256`: sha256 of returned `.onnx`
 
 Selection behavior:
 
@@ -160,7 +160,7 @@ Compression:
 - `GET /api/models/{model_name}/factors`
 - `GET /api/models/{model_name}/symbols/{symbol}?group_key=...`
 - `GET /api/models/{model_name}/model/{symbol}`
-- `GET /api/models/{model_name}/model_so/{symbol}`
+- `GET /api/models/{model_name}/model_onnx/{symbol}`
 - `GET /api/venues`
 - `PUT /api/venues/{venue}/quantiles`
 - `GET /api/venues/{venue}/quantiles`

@@ -181,10 +181,10 @@ def create_app(settings: Settings, registry: ModelRegistry, quantiles_store: Qua
             },
         }
 
-    @app.get("/api/models/{model_name}/model_so/{symbol}")
-    async def get_model_so_binary(model_name: str, symbol: str) -> FileResponse:
+    @app.get("/api/models/{model_name}/model_onnx/{symbol}")
+    async def get_model_onnx_binary(model_name: str, symbol: str) -> FileResponse:
         try:
-            payload = registry.build_model_so_payload(model_name=model_name, symbol=symbol)
+            payload = registry.build_model_onnx_payload(model_name=model_name, symbol=symbol)
         except ModelNotFound as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         except SymbolNotFound as exc:
@@ -196,11 +196,11 @@ def create_app(settings: Settings, registry: ModelRegistry, quantiles_store: Qua
             "x-model-feature-dim": str(payload["feature_dim"]),
             "x-model-name": str(payload["model_name"]),
             "x-model-symbol": str(payload["symbol"]),
-            "x-model-sha256": str(payload["model_so_sha256"]),
+            "x-model-sha256": str(payload["model_onnx_sha256"]),
         }
-        filename = f"{payload['model_name']}.{payload['symbol']}.so"
+        filename = f"{payload['model_name']}.{payload['symbol']}.onnx"
         return FileResponse(
-            path=str(payload["model_so_path"]),
+            path=str(payload["model_onnx_path"]),
             media_type="application/octet-stream",
             filename=filename,
             headers=headers,
