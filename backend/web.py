@@ -181,6 +181,31 @@ def create_app(settings: Settings, registry: ModelRegistry, quantiles_store: Qua
             },
         }
 
+    @app.get("/api/models/{model_name}/model_so/{symbol}")
+    async def get_model_so_binary(model_name: str, symbol: str) -> FileResponse:
+        try:
+            payload = registry.build_model_so_payload(model_name=model_name, symbol=symbol)
+        except ModelNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except SymbolNotFound as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ModelRegistryError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+        headers = {
+            "x-model-feature-dim": str(payload["feature_dim"]),
+            "x-model-name": str(payload["model_name"]),
+            "x-model-symbol": str(payload["symbol"]),
+            "x-model-sha256": str(payload["model_so_sha256"]),
+        }
+        filename = f"{payload['model_name']}.{payload['symbol']}.so"
+        return FileResponse(
+            path=str(payload["model_so_path"]),
+            media_type="application/octet-stream",
+            filename=filename,
+            headers=headers,
+        )
+
     # ── Venue Quantiles ──────────────────────────────────────────
 
     @app.get("/api/venues")

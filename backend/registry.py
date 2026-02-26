@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .convert_pkl_to_xgb import ModelConversionError, convert_pkl_to_xgb_json
+from .convert_xgb_to_tl2cgen import ModelCompileError, convert_xgb_json_to_tl2cgen_so
 from .db import Database, RegisteredModel
 from .parser import ModelSnapshot, SymbolRecord, load_model_json_text, scan_model_root
 
@@ -253,6 +254,46 @@ class ModelRegistry:
             "dim_factors": [asdict(item) for item in record.dim_factors],
         }
 
+    def build_model_so_payload(self, model_name: str, symbol: str) -> dict[str, Any]:
+        snapshot = self.get_model_snapshot(model_name)
+        record = self._select_unique_record(snapshot, symbol)
+
+        if not record.feature_dim or not (
+            record.artifacts.get("model_json") or record.artifacts.get("model_pkl")
+        ):
+            raise SymbolNotFound(
+                f"symbol '{symbol}' in model '{model_name}' is not payload-ready "
+                "(missing model json/model pkl or dim)"
+            )
+
+        model_json_path = Path(self._resolve_model_json_path(snapshot, record))
+        model_so_path = self._build_converted_so_path(snapshot.model_name, record.group_key, model_json_path)
+        try:
+            converted = convert_xgb_json_to_tl2cgen_so(model_json_path, model_so_path)
+        except ModelCompileError as exc:
+            raise ModelRegistryError(
+                f"failed to compile tl2cgen shared library for {record.group_key}: {exc}"
+            ) from exc
+
+        return {
+            "model_name": snapshot.model_name,
+            "root_path": snapshot.root_path,
+            "scanned_at": snapshot.scanned_at,
+            "symbol": record.symbol,
+            "return_name": record.return_name,
+            "feature_dim": record.feature_dim,
+            "train_window_start_ts": record.train_window_start_ts,
+            "train_window_end_ts": record.train_window_end_ts,
+            "train_start_date": record.train_start_date,
+            "train_end_date": record.train_end_date,
+            "train_samples": record.train_samples,
+            "train_time_sec": record.train_time_sec,
+            "model_json_path": str(model_json_path),
+            "model_so_path": str(converted),
+            "model_so_sha256": self._sha256_file(converted),
+            "dim_factors": [asdict(item) for item in record.dim_factors],
+        }
+
     def _select_record(
         self,
         snapshot: ModelSnapshot,
@@ -373,3 +414,17 @@ class ModelRegistry:
         digest = hashlib.sha1(str(model_pkl_path).encode("utf-8")).hexdigest()[:12]
         file_name = f"{_safe_file_token(group_key)}.{digest}.model.json"
         return model_dir / file_name
+
+    def _build_converted_so_path(self, model_name: str, group_key: str, model_json_path: Path) -> Path:
+        model_dir = self._converted_model_dir / _safe_file_token(model_name)
+        digest = hashlib.sha1(str(model_json_path).encode("utf-8")).hexdigest()[:12]
+        file_name = f"{_safe_file_token(group_key)}.{digest}.model.so"
+        return model_dir / file_name
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
