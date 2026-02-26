@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
+import traceback
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class ModelCompileError(Exception):
@@ -14,15 +18,21 @@ def _load_tl2cgen_model(model_json_path: Path) -> object:
     try:
         import treelite  # type: ignore
 
+        logger.info("treelite version: %s", getattr(treelite, "__version__", "unknown"))
         loader = getattr(treelite.Model, "load", None)
         if callable(loader):
             try:
                 return loader(str(model_json_path), model_format="xgboost_json")
             except Exception as exc:
+                logger.error(
+                    "treelite.Model.load raised %s for %s:\n%s",
+                    type(exc).__name__, model_json_path, traceback.format_exc(),
+                )
                 raise ModelCompileError(
-                    f"treelite.Model.load failed: {model_json_path}"
+                    f"treelite.Model.load failed: {model_json_path}: {exc}"
                 ) from exc
     except ImportError:
+        logger.warning("treelite not installed, falling back to tl2cgen.frontend")
         pass
 
     # Fallback: legacy tl2cgen.frontend.load_xgboost_model
