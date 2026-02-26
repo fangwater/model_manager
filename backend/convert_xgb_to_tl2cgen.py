@@ -93,11 +93,21 @@ def convert_xgb_json_to_tl2cgen_so(
     model = _load_tl2cgen_model(source)
 
     try:
-        import tl2cgen  # type: ignore
-    except Exception as exc:  # pragma: no cover
+        import tl2cgen as _tl2cgen  # type: ignore
+        _has_tl2cgen = True
+    except ImportError:
+        _has_tl2cgen = False
+
+    try:
+        import treelite as _treelite  # type: ignore
+        _has_treelite_export = callable(getattr(_treelite, "export_lib", None))
+    except ImportError:
+        _has_treelite_export = False
+
+    if not _has_tl2cgen and not _has_treelite_export:
         raise ModelCompileError(
-            "failed to import tl2cgen; run 'pip install tl2cgen' first"
-        ) from exc
+            "no export_lib found; run 'pip install treelite tl2cgen'"
+        )
 
     tmp_fd, tmp_name = tempfile.mkstemp(
         prefix=f".{target.stem}.",
@@ -108,7 +118,16 @@ def convert_xgb_json_to_tl2cgen_so(
     tmp_path = Path(tmp_name)
 
     try:
-        tl2cgen.export_lib(model, toolchain="gcc", libpath=str(tmp_path))
+        # Prefer treelite.export_lib when available — its C++ compiler version
+        # matches the Python package version, avoiding segfaults from version
+        # mismatches between the model checkpoint and the tl2cgen bundled runtime.
+        if _has_treelite_export:
+            logger.info("compiling .so via treelite.export_lib (version %s)",
+                        getattr(_treelite, "__version__", "?"))
+            _treelite.export_lib(model, toolchain="gcc", libpath=str(tmp_path))
+        else:
+            logger.info("compiling .so via tl2cgen.export_lib")
+            _tl2cgen.export_lib(model, toolchain="gcc", libpath=str(tmp_path))
         if not tmp_path.exists() or tmp_path.stat().st_size == 0:
             raise ModelCompileError(f"tl2cgen produced empty shared library: {tmp_path}")
         tmp_path.replace(target)
