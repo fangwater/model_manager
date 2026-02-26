@@ -10,6 +10,22 @@ class ModelCompileError(Exception):
 
 
 def _load_tl2cgen_model(model_json_path: Path) -> object:
+    # Try new API first: treelite.Model.load (tl2cgen >= 0.4 / treelite 4.x)
+    try:
+        import treelite  # type: ignore
+
+        loader = getattr(treelite.Model, "load", None)
+        if callable(loader):
+            try:
+                return loader(str(model_json_path), model_format="xgboost_json")
+            except Exception as exc:
+                raise ModelCompileError(
+                    f"treelite.Model.load failed: {model_json_path}"
+                ) from exc
+    except ImportError:
+        pass
+
+    # Fallback: legacy tl2cgen.frontend.load_xgboost_model
     try:
         import tl2cgen  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -19,7 +35,10 @@ def _load_tl2cgen_model(model_json_path: Path) -> object:
 
     frontend = getattr(tl2cgen, "frontend", None)
     if frontend is None:
-        raise ModelCompileError("tl2cgen frontend module not found")
+        raise ModelCompileError(
+            "tl2cgen frontend module not found and treelite is not installed; "
+            "run 'pip install treelite tl2cgen'"
+        )
 
     loader = getattr(frontend, "load_xgboost_model", None)
     if not callable(loader):
