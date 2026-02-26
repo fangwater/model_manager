@@ -13,52 +13,63 @@ class ModelCompileError(Exception):
     pass
 
 
-def _load_tl2cgen_model(model_json_path: Path) -> object:
-    # Try new API first: treelite.Model.load (tl2cgen >= 0.4 / treelite 4.x)
+def _find_xgb_loader() -> callable:
+    """Find a working load_xgboost_model function across treelite/tl2cgen versions."""
+    candidates: list[tuple[str, callable]] = []
+
+    # treelite.frontend.load_xgboost_model (treelite >= 4.x)
     try:
         import treelite  # type: ignore
-
-        logger.info("treelite version: %s", getattr(treelite, "__version__", "unknown"))
-        loader = getattr(treelite.Model, "load", None)
-        if callable(loader):
-            try:
-                return loader(str(model_json_path), model_format="xgboost_json")
-            except Exception as exc:
-                logger.error(
-                    "treelite.Model.load raised %s for %s:\n%s",
-                    type(exc).__name__, model_json_path, traceback.format_exc(),
-                )
-                raise ModelCompileError(
-                    f"treelite.Model.load failed: {model_json_path}: {exc}"
-                ) from exc
+        ver = getattr(treelite, "__version__", "unknown")
+        logger.info("treelite version: %s", ver)
+        frontend = getattr(treelite, "frontend", None)
+        if frontend:
+            fn = getattr(frontend, "load_xgboost_model", None)
+            if callable(fn):
+                candidates.append(("treelite.frontend.load_xgboost_model", fn))
+        # older treelite: Model.load
+        fn2 = getattr(getattr(treelite, "Model", None), "load", None)
+        if callable(fn2):
+            candidates.append(("treelite.Model.load", fn2))
     except ImportError:
-        logger.warning("treelite not installed, falling back to tl2cgen.frontend")
-        pass
+        logger.info("treelite not installed")
 
-    # Fallback: legacy tl2cgen.frontend.load_xgboost_model
+    # tl2cgen.frontend.load_xgboost_model (older tl2cgen)
     try:
         import tl2cgen  # type: ignore
-    except Exception as exc:  # pragma: no cover
-        raise ModelCompileError(
-            "failed to import tl2cgen; run 'pip install tl2cgen' first"
-        ) from exc
+        frontend = getattr(tl2cgen, "frontend", None)
+        if frontend:
+            fn = getattr(frontend, "load_xgboost_model", None)
+            if callable(fn):
+                candidates.append(("tl2cgen.frontend.load_xgboost_model", fn))
+    except ImportError:
+        logger.info("tl2cgen not installed")
 
-    frontend = getattr(tl2cgen, "frontend", None)
-    if frontend is None:
+    if not candidates:
         raise ModelCompileError(
-            "tl2cgen frontend module not found and treelite is not installed; "
-            "run 'pip install treelite tl2cgen'"
+            "no xgboost model loader found; run 'pip install treelite tl2cgen'"
         )
+    logger.info("loader candidates: %s", [c[0] for c in candidates])
+    return candidates[0]
 
-    loader = getattr(frontend, "load_xgboost_model", None)
-    if not callable(loader):
-        raise ModelCompileError("tl2cgen.frontend.load_xgboost_model is unavailable")
+
+def _load_tl2cgen_model(model_json_path: Path) -> object:
+    name, loader = _find_xgb_loader()
+    logger.info("using loader: %s", name)
+
+    kwargs = {}
+    if "Model.load" in name:
+        kwargs["model_format"] = "xgboost_json"
 
     try:
-        return loader(str(model_json_path))
+        return loader(str(model_json_path), **kwargs)
     except Exception as exc:
+        logger.error(
+            "%s raised %s for %s:\n%s",
+            name, type(exc).__name__, model_json_path, traceback.format_exc(),
+        )
         raise ModelCompileError(
-            f"load xgboost json for tl2cgen failed: {model_json_path}"
+            f"{name} failed for {model_json_path}: {exc}"
         ) from exc
 
 
