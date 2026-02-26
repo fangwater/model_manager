@@ -21,8 +21,7 @@ def _load_pickle(path: Path) -> Any:
 
 
 def _resolve_savable_model(obj: Any) -> Any:
-    candidates: list[Any] = [obj]
-
+    # 优先提取原生 Booster，避免 sklearn wrapper 的兼容性问题
     getter = getattr(obj, "get_booster", None)
     if callable(getter):
         try:
@@ -30,17 +29,21 @@ def _resolve_savable_model(obj: Any) -> Any:
         except Exception as exc:
             raise ModelConversionError(f"get_booster failed: {exc}") from exc
         if booster is not None:
-            candidates.append(booster)
+            saver = getattr(booster, "save_model", None)
+            if callable(saver):
+                return booster
 
     for attr in ("_Booster", "booster"):
         booster = getattr(obj, attr, None)
         if booster is not None:
-            candidates.append(booster)
+            saver = getattr(booster, "save_model", None)
+            if callable(saver):
+                return booster
 
-    for item in candidates:
-        saver = getattr(item, "save_model", None)
-        if callable(saver):
-            return item
+    # fallback: 对象本身
+    saver = getattr(obj, "save_model", None)
+    if callable(saver):
+        return obj
 
     raise ModelConversionError(
         f"unsupported pickle payload type: {type(obj).__name__}; expected xgboost model/booster"
