@@ -1,7 +1,7 @@
 fastapi==0.116.1
 uvicorn==0.35.0
 pandas==2.3.1
-xgboost==2.1.4
+xgboost==3.2.0
 onnxmltools
 onnx
 onnxconverter-common
