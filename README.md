@@ -6,7 +6,6 @@ Python service for:
 - exploring symbol/factor/IC/info via web UI
 - serving XGBoost model json + metadata through HTTP
 - auto-refreshing registered models when artifact files change
-- per-venue order quantiles (low/high thresholds) via pkl files
 
 ## Artifact layout
 
@@ -70,7 +69,6 @@ cd /home/fanghaizhou/project/model_manager
 This is a full cleanup for restart preparation. It removes all runtime history under `data/`:
 
 - registered models in sqlite
-- venue quantiles registrations in sqlite
 - converted model cache files
 
 Recommended sequence:
@@ -161,10 +159,6 @@ Compression:
 - `GET /api/models/{model_name}/symbols/{symbol}?group_key=...`
 - `GET /api/models/{model_name}/model/{symbol}`
 - `GET /api/models/{model_name}/model_onnx/{symbol}`
-- `GET /api/venues`
-- `PUT /api/venues/{venue}/quantiles`
-- `GET /api/venues/{venue}/quantiles`
-- `GET /api/venues/{venue}/quantiles/{symbol}`
 
 `POST /api/models` and refresh require unique `symbol` per registered root path.
 If one symbol maps to multiple groups, request fails with `400`.
@@ -180,67 +174,6 @@ All model endpoints are public; no bearer token is required.
 - `group_count`
 - `factor_count`
 - `factors` (deduplicated list)
-
-## Order Quantiles API
-
-Per-venue 阈值配置，每个 venue 对应一份 pkl 文件，pkl 内按 symbol 存储 `low` 和 `high`。
-
-pkl 数据格式（dict）：
-
-```json
-{
-  "BTCUSDT": {"low": 10000.0, "high": 50000.0},
-  "ETHUSDT": {"low": 5000.0, "high": 20000.0}
-}
-```
-
-服务内部会将 `low/high` 统一映射并存储为
-`medium_notional_threshold/large_notional_threshold`（包括 Redis 写入与查询返回）。
-
-合法 venue 列表：`binance-margin`, `binance-futures`, `okex-margin`, `okex-futures`, `bybit-margin`, `bybit-futures`, `bitget-margin`, `bitget-futures`, `gate-margin`, `gate-futures`
-
-### 注册/更新 venue 的 pkl 路径
-
-```
-PUT /api/venues/{venue}/quantiles
-Body: {"pkl_path": "/path/to/order_quantiles.pkl"}
-```
-
-返回：`{"venue": "binance-futures", "symbol_count": 42}`
-
-### 查询指定 venue 的所有阈值
-
-```
-GET /api/venues/{venue}/quantiles
-```
-
-返回：
-
-```json
-{
-  "venue": "binance-futures",
-  "symbols": {
-    "BTCUSDT": {"medium_notional_threshold": 10000.0, "large_notional_threshold": 50000.0},
-    "ETHUSDT": {"medium_notional_threshold": 5000.0, "large_notional_threshold": 20000.0}
-  }
-}
-```
-
-### 查询指定 venue+symbol 的阈值
-
-```
-GET /api/venues/{venue}/quantiles/{symbol}
-```
-
-返回：`{"venue": "binance-futures", "symbol": "BTCUSDT", "medium_notional_threshold": 10000.0, "large_notional_threshold": 50000.0}`
-
-### 列出所有已注册 venue
-
-```
-GET /api/venues
-```
-
-返回：`{"items": [{"venue": "binance-futures", "pkl_path": "/path/to/file.pkl", "updated_at": "..."}]}`
 
 ## Env vars
 

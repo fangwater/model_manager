@@ -8,7 +8,6 @@ import uvicorn
 
 from .config import load_settings
 from .db import Database
-from .quantiles import QuantilesStore
 from .registry import ModelRegistry
 from .watcher import ModelWatcher
 from .web import create_app
@@ -56,12 +55,6 @@ async def async_main(args: argparse.Namespace) -> int:
     registry.warmup()
     LOG.info("model registry ready")
 
-    LOG.info("initializing quantiles store...")
-    quantiles_store = QuantilesStore(db)
-    LOG.info("warming up quantiles store...")
-    quantiles_store.warmup()
-    LOG.info("quantiles store ready")
-
     watcher = None
     if settings.watch_enabled:
         LOG.info("starting model watcher...")
@@ -74,7 +67,7 @@ async def async_main(args: argparse.Namespace) -> int:
         LOG.info("model watcher started")
 
     LOG.info("creating FastAPI app...")
-    app = create_app(settings=settings, registry=registry, quantiles_store=quantiles_store)
+    app = create_app(settings=settings, registry=registry)
 
     config = uvicorn.Config(app=app, host=http_host, port=http_port, log_level="info")
     server = uvicorn.Server(config)
